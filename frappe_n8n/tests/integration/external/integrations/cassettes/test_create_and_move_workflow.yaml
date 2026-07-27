@@ -1,0 +1,42 @@
+interactions:
+- request:
+    body: '{"name": "VCR Test Workflow", "nodes": [], "connections": {}, "settings": {}}'
+    headers:
+      Accept:
+      - application/json
+      Content-Type:
+      - application/json
+      X-N8N-API-KEY:
+      - dummy_api_key
+    method: POST
+    uri: https://n8n.example.com/api/v1/workflows
+  response:
+    body:
+      string: '{"id":"wf_vcr_001","name":"VCR Test Workflow","nodes":[],"connections":{}}'
+    headers:
+      Content-Type:
+      - application/json
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"destinationProjectId": "proj_dest_456"}'
+    headers:
+      Accept:
+      - application/json
+      Content-Type:
+      - application/json
+      X-N8N-API-KEY:
+      - dummy_api_key
+    method: PUT
+    uri: https://n8n.example.com/api/v1/workflows/wf_vcr_001/transfer
+  response:
+    body:
+      string: '{"success": true}'
+    headers:
+      Content-Type:
+      - application/json
+    status:
+      code: 200
+      message: OK
+version: 1
