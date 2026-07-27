@@ -7,6 +7,7 @@ from frappe_n8n.integrations.n8n import (
 	enable_workflow as integration_enable_workflow,
 	disable_workflow as integration_disable_workflow,
 	delete_workflow as integration_delete_workflow,
+	trigger_test_execution as integration_trigger_test_execution,
 	get_n8n_config,
 )
 
@@ -52,45 +53,16 @@ def trigger_test_execution(playbook_name):
 	payload = target_doc.as_dict(convert_dates_to_str=True)
 	execution_name = f"test-{playbook_doc.name}-{frappe.generate_hash(length=10)}"
 
-	for node in playbook_doc.get("nodes", []):
-		if node.get("node_type") == "n8n-nodes-base.webhook" and node.get("n8n_webhook_id"):
-			from frappe_n8n.n8n.doctype.playbook_execution.playbook_execution import trigger_test_execution_sync
-			import requests
-			try:
-				trigger_test_execution_sync(
-					playbook_name=playbook_doc.name,
-					reference_doctype=target_doc.doctype,
-					reference_name=target_doc.name,
-					payload=payload,
-					execution_name=execution_name
-				)
-				return {"status": "success", "title": "Test Execution Sent", "message": "Test event sent."}
-			except requests.exceptions.RequestException as e:
-				msg = "Failed to send test event to n8n. Please ensure 'Listen for test events' is active in n8n."
-				if getattr(e, "response", None) is not None:
-					msg += f" (HTTP {e.response.status_code})"
-				frappe.log_error(f"Failed to trigger n8n test execution: {e}", "n8n Execution Error")
-				return {"status": "failed", "title": "Test Execution Failed", "message": msg}
-			except Exception as e:
-				frappe.log_error(f"Failed to trigger n8n test execution: {e}", "n8n Execution Error")
-				return {"status": "failed", "title": "Error", "message": f"Failed to trigger n8n test execution: {str(e)}"}
-
-	from frappe_controller.utils.background_jobs import enqueue
-	enqueue(
-		"frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.trigger_test_execution_async",
-		queue="high",
+	return integration_trigger_test_execution(
 		playbook_name=playbook_doc.name,
-		reference_doctype=target_doc.doctype,
-		reference_name=target_doc.name,
 		payload=payload,
-		execution_name=execution_name
+		execution_name=execution_name,
 	)
-	return {"status": "success", "title": "Test Execution Queued", "message": "Test event queued."}
 
 
 def enqueue_create_workflow(playbook_name):
 	frappe.enqueue(
-		"frappe_n8n.n8n.doctype.playbook.playbook.create_workflow",
+		"frappe_n8n.integrations.n8n.create_workflow",
 		playbook_name=playbook_name,
 		queue="low"
 	)
@@ -116,19 +88,11 @@ def on_update(doc, method=None):
 		return
 	if not doc.n8n_workflow_id:
 		enqueue_create_workflow(doc.name)
-	elif doc.has_value_changed("enabled"):
+	elif not doc.flags.in_insert and doc.get_doc_before_save() and doc.has_value_changed("enabled"):
 		if doc.enabled:
-			frappe.enqueue(
-				"frappe_n8n.integrations.n8n.enable_workflow",
-				playbook_name=doc.name,
-				queue="low"
-			)
+			integration_enable_workflow(doc.name)
 		else:
-			frappe.enqueue(
-				"frappe_n8n.integrations.n8n.disable_workflow",
-				playbook_name=doc.name,
-				queue="low"
-			)
+			integration_disable_workflow(doc.name)
 
 
 def on_trash(doc, method=None):
@@ -136,7 +100,7 @@ def on_trash(doc, method=None):
 		return
 
 	frappe.enqueue(
-		"frappe_n8n.n8n.doctype.playbook.playbook.delete_workflow",
+		"frappe_n8n.integrations.n8n.delete_workflow",
 		workflow_id=doc.n8n_workflow_id,
 		queue="low"
 	)
