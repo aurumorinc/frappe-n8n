@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Aquiveal and contributors
+# Copyright (c) 2026, Aurumor and contributors
 # For license information, please see license.txt
 
 import json
@@ -141,6 +141,10 @@ class N8nClient:
 		payload = {"destinationProjectId": destination_project_id}
 		self._request("PUT", f"/api/v1/credentials/{credential_id}/transfer", json=payload)
 
+	def get_workflow(self, workflow_id: str) -> dict:
+		res = self._request("GET", f"/api/v1/workflows/{workflow_id}")
+		return res.json()
+
 	def create_workflow(self, name: str, nodes: list | None = None, connections: dict | None = None, settings: dict | None = None) -> dict:
 		payload = {
 			"name": name,
@@ -166,6 +170,34 @@ class N8nClient:
 			self._request("DELETE", f"/api/v1/workflows/{workflow_id}")
 		except N8nNotFoundError:
 			frappe.log_error("Workflow already deleted in n8n (404).", "n8n Integration Error")
+
+	def stop_execution(self, execution_id: str) -> dict:
+		res = self._request("POST", f"/api/v1/executions/{execution_id}/stop")
+		return res.json()
+
+	def trigger_execution(self, webhook_id: str, payload: dict, execution_name: str, webhook_security: str | None = None) -> requests.Response:
+		headers = dict(self.headers)
+		if webhook_security:
+			headers["Authorization"] = f"Bearer {webhook_security}"
+		if execution_name:
+			headers["n8n-execution-name"] = execution_name
+		url = f"{self.base_url}/webhook/{webhook_id}"
+		return requests.post(url, json=payload, headers=headers, timeout=10)
+
+	def trigger_test_execution(self, webhook_id: str, payload: dict, execution_name: str, webhook_security: str | None = None) -> requests.Response:
+		headers = dict(self.headers)
+		if webhook_security:
+			headers["Authorization"] = f"Bearer {webhook_security}"
+		if execution_name:
+			headers["n8n-execution-name"] = execution_name
+		url = f"{self.base_url}/webhook-test/{webhook_id}"
+		return requests.post(url, json=payload, headers=headers, timeout=10)
+
+	def resume_execution(self, url: str, payload: dict, webhook_security: str | None = None) -> requests.Response:
+		headers = dict(self.headers)
+		if webhook_security:
+			headers["Authorization"] = f"Bearer {webhook_security}"
+		return requests.post(url, json=payload, headers=headers, timeout=10)
 
 
 def update_credential():
@@ -258,7 +290,7 @@ def rotate_credentials():
 	controller.emit_event(key="n8n_credential_ready", argument={"status": "success"})
 
 
-def create_workflow(playbook_name: str):
+def create_workflow(playbook_name: str) -> str | None:
 	playbook_doc = frappe.get_doc("Playbook", playbook_name)
 	if playbook_doc.n8n_workflow_id:
 		return playbook_doc.n8n_workflow_id
@@ -320,48 +352,50 @@ def create_workflow(playbook_name: str):
 		raise
 
 
-def move_workflow(playbook_name: str, project_id: str):
+def move_workflow(playbook_name: str, project_id: str) -> None:
 	playbook_doc = frappe.get_doc("Playbook", playbook_name)
 	if not playbook_doc.n8n_workflow_id:
-		return create_workflow(playbook_name)
+		create_workflow(playbook_name)
+		return
 
 	client = N8nClient.from_settings(wait_if_unauthorized=True)
 	if not client:
-		return None
+		return
 
 	try:
 		client.move_workflow(playbook_doc.n8n_workflow_id, project_id)
 	except N8nNotFoundError:
 		playbook_doc.db_set("n8n_workflow_id", None)
 		playbook_doc.n8n_workflow_id = None
-		return create_workflow(playbook_name)
+		create_workflow(playbook_name)
 
 
-def enable_workflow(playbook_name: str):
+def enable_workflow(playbook_name: str) -> None:
 	playbook_doc = frappe.get_doc("Playbook", playbook_name)
 	if not playbook_doc.n8n_workflow_id:
-		return None
+		return
 
 	client = N8nClient.from_settings(wait_if_unauthorized=True)
 	if not client:
-		return None
+		return
 
 	try:
 		client.activate_workflow(playbook_doc.n8n_workflow_id)
+		controller.emit_event(key=f"doc:Playbook:{playbook_name}:enabled", argument={"status": "enabled"})
 	except N8nNotFoundError:
 		playbook_doc.db_set("n8n_workflow_id", None)
 		playbook_doc.n8n_workflow_id = None
-		return create_workflow(playbook_name)
+		create_workflow(playbook_name)
 
 
-def disable_workflow(playbook_name: str):
+def disable_workflow(playbook_name: str) -> None:
 	playbook_doc = frappe.get_doc("Playbook", playbook_name)
 	if not playbook_doc.n8n_workflow_id:
-		return None
+		return
 
 	client = N8nClient.from_settings(wait_if_unauthorized=True)
 	if not client:
-		return None
+		return
 
 	try:
 		client.deactivate_workflow(playbook_doc.n8n_workflow_id)
@@ -370,8 +404,170 @@ def disable_workflow(playbook_name: str):
 		playbook_doc.n8n_workflow_id = None
 
 
-def delete_workflow(workflow_id: str):
+def delete_workflow(workflow_id: str) -> None:
 	client = N8nClient.from_settings(wait_if_unauthorized=True)
 	if not client:
 		return
 	client.delete_workflow(workflow_id)
+
+
+def retrieve_workflow(playbook_name: str) -> dict | None:
+	playbook_doc = frappe.get_doc("Playbook", playbook_name)
+	if not playbook_doc.n8n_workflow_id:
+		return None
+
+	client = N8nClient.from_settings(wait_if_unauthorized=True)
+	if not client:
+		return None
+
+	try:
+		return client.get_workflow(playbook_doc.n8n_workflow_id)
+	except N8nNotFoundError:
+		playbook_doc.db_set("n8n_workflow_id", None)
+		playbook_doc.n8n_workflow_id = None
+		create_workflow(playbook_name)
+		return None
+
+
+def trigger_test_execution(playbook_name: str, payload: dict, execution_name: str) -> dict:
+	config = get_n8n_config()
+	if config["status"] != "Authorized":
+		return {
+			"status": "failed",
+			"title": "n8n Unauthorized",
+			"message": "n8n Settings is not authorized.",
+		}
+
+	from frappe_n8n.n8n.doctype.playbook_provider.playbook_provider import update_a_playbook
+	update_a_playbook(playbook_name)
+
+	playbook_doc = frappe.get_doc("Playbook", playbook_name)
+	webhook_id = None
+	for node in playbook_doc.get("nodes", []):
+		if getattr(node, "n8n_webhook_id", None):
+			webhook_id = node.n8n_webhook_id
+			break
+
+	if not webhook_id:
+		return {
+			"status": "failed",
+			"title": "Webhook Not Found",
+			"message": "No webhook node found for this Playbook.",
+		}
+
+	client = N8nClient.from_settings(wait_if_unauthorized=False)
+	if not client:
+		return {
+			"status": "failed",
+			"title": "n8n Client Error",
+			"message": "Unable to initialize n8n client.",
+		}
+
+	try:
+		res = client.trigger_test_execution(
+			webhook_id=webhook_id,
+			payload=payload,
+			execution_name=execution_name,
+			webhook_security=config["webhook_security"],
+		)
+		if res.status_code >= 400:
+			return {
+				"status": "failed",
+				"title": "Test Execution Failed",
+				"message": f"n8n returned status {res.status_code}: {res.text}",
+			}
+		return {
+			"status": "success",
+			"title": "Test Execution Sent",
+			"message": "Test event sent to n8n.",
+		}
+	except Exception as e:
+		return {
+			"status": "failed",
+			"title": "Test Execution Error",
+			"message": str(e),
+		}
+
+
+def trigger_execution(playbook_name: str, payload: dict, execution_name: str, webhook_id: str | None = None) -> None:
+	config = get_n8n_config()
+	if config["status"] != "Authorized":
+		if getattr(frappe.flags, "current_job_id", None):
+			controller.wait_for_event("doc:n8n Settings:authorized")
+			config = get_n8n_config()
+		if config["status"] != "Authorized":
+			return
+
+	client = N8nClient.from_settings(wait_if_unauthorized=True)
+	if not client:
+		return
+
+	playbook_doc = frappe.get_doc("Playbook", playbook_name)
+	if playbook_doc.n8n_workflow_id:
+		try:
+			wf = client.get_workflow(playbook_doc.n8n_workflow_id)
+			wf_active = wf.get("active", False)
+			if wf_active and not playbook_doc.enabled:
+				playbook_doc.db_set("enabled", 1)
+				controller.emit_event(key=f"doc:Playbook:{playbook_name}:enabled", argument={"status": "enabled"})
+			elif not wf_active and playbook_doc.enabled:
+				client.activate_workflow(playbook_doc.n8n_workflow_id)
+		except N8nNotFoundError:
+			playbook_doc.db_set("n8n_workflow_id", None)
+			create_workflow(playbook_name)
+			playbook_doc.reload()
+
+	if not playbook_doc.enabled:
+		if getattr(frappe.flags, "current_job_id", None):
+			controller.wait_for_event(f"doc:Playbook:{playbook_name}:enabled")
+			playbook_doc.reload()
+		if not playbook_doc.enabled:
+			return
+
+	if not webhook_id:
+		for node in playbook_doc.get("nodes", []):
+			if getattr(node, "n8n_webhook_id", None):
+				webhook_id = node.n8n_webhook_id
+				break
+
+	if not webhook_id:
+		frappe.log_error("No webhook ID found for execution", "n8n Execution Error")
+		return
+
+	client.trigger_execution(
+		webhook_id=webhook_id,
+		payload=payload,
+		execution_name=execution_name,
+		webhook_security=config["webhook_security"],
+	)
+
+
+def stop_execution(n8n_execution_id: str) -> dict | None:
+	client = N8nClient.from_settings(wait_if_unauthorized=True)
+	if not client:
+		return None
+	try:
+		return client.stop_execution(n8n_execution_id)
+	except N8nNotFoundError:
+		frappe.log_error("Execution not found in n8n (404).", "n8n Integration Error")
+		return None
+	except Exception as e:
+		frappe.log_error(f"Failed to stop execution: {str(e)}", "n8n Integration Error")
+		raise
+
+
+def resume_execution(url: str, payload: dict, execution_id: str | None = None) -> None:
+	config = get_n8n_config()
+	client = N8nClient.from_settings(wait_if_unauthorized=True)
+	if not client:
+		return
+	try:
+		res = client.resume_execution(url, payload, webhook_security=config["webhook_security"])
+		if res.status_code >= 400 and execution_id:
+			if frappe.db.exists("Playbook Execution", execution_id):
+				frappe.db.set_value("Playbook Execution", execution_id, "status", "error")
+	except Exception as e:
+		if execution_id and frappe.db.exists("Playbook Execution", execution_id):
+			frappe.db.set_value("Playbook Execution", execution_id, "status", "error")
+		frappe.log_error(f"Failed to resume execution: {str(e)}", "n8n Integration Error")
+		raise
