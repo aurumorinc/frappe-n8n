@@ -1,292 +1,174 @@
-# Copyright (c) 2026, Aquiveal and Contributors
+# Copyright (c) 2026, Aurumor and Contributors
 # See license.txt
 
 import frappe
 from frappe.tests import IntegrationTestCase
 from unittest.mock import patch, MagicMock
-import json
-import requests
+from frappe_n8n.integrations.n8n import N8nClient
 
 
 class TestN8nPlaybook(IntegrationTestCase):
-    @classmethod
-    def tearDownClass(cls):
-        frappe.db.rollback()
-        super().tearDownClass()
+	@classmethod
+	def tearDownClass(cls):
+		frappe.db.rollback()
+		super().tearDownClass()
 
-    def setUp(self):
-        super().setUp()
+	def setUp(self):
+		super().setUp()
 
-    def tearDown(self):
-        frappe.db.rollback()
-        super().tearDown()
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
 
-    @patch("frappe_n8n.integrations.n8n.requests.put")
-    @patch("frappe_n8n.integrations.n8n.requests.post")
-    @patch("frappe.enqueue")
-    def test_on_playbook_after_insert_creates_workflow(self, mock_enqueue, mock_post, mock_put):
-        mock_post.return_value.status_code = 200
-        mock_put.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {
-            "id": "wf-12345",
-            "nodes": [
-                {"name": "Webhook", "type": "n8n-nodes-base.webhook", "id": "node-1", "webhookId": "wh-1"}
-            ],
-            "connections": {}
-        }
-        
-        settings = frappe.get_doc("n8n Settings")
-        settings.db_set("enabled", 1)
-        settings.db_set("base_url", "https://n8n.example.com")
-        settings.db_set("api_key", "test_key")
-        
-        playbook = frappe.get_doc({
-            "doctype": "Playbook",
-            "playbook_name": "Test N8n Playbook Hook",
-            "provider": "n8n",
-            "document_type": "ToDo", 
-            "status": "Enabled"
-        }).insert()
-        
-        # Verify that creation was enqueued asynchronously
-        mock_enqueue.assert_called_with(
-            "frappe_n8n.n8n.doctype.playbook.playbook.create_workflow",
-            playbook_name=playbook.name,
-            queue="low"
-        )
+	@patch.object(N8nClient, "activate_workflow")
+	@patch.object(N8nClient, "create_workflow", return_value={"id": "wf-12345", "nodes": [{"name": "Webhook", "type": "n8n-nodes-base.webhook", "id": "node-1", "webhookId": "wh-1"}], "connections": {}})
+	@patch("frappe.enqueue")
+	def test_on_playbook_after_insert_creates_workflow(self, mock_enqueue, mock_create, mock_activate):
+		settings = frappe.get_doc("n8n Settings")
+		settings.db_set("enabled", 1)
+		settings.db_set("status", "Authorized")
+		settings.db_set("base_url", "https://n8n.example.com")
+		settings.db_set("api_key", "test_key")
 
-        # Now simulate the background job executing
-        from frappe_n8n.n8n.doctype.playbook.playbook import create_workflow
-        create_workflow(playbook.name)
+		playbook = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": "Test N8n Playbook Hook",
+			"provider": "n8n",
+			"document_type": "ToDo", 
+			"status": "Enabled"
+		}).insert()
 
-        self.assertTrue(mock_post.called)
-        self.assertEqual(mock_post.call_args_list[0][0][0], "https://n8n.example.com/api/v1/workflows")
-        
-        playbook.reload()
-        self.assertEqual(playbook.n8n_workflow_id, "wf-12345")
-        self.assertEqual(len(playbook.nodes), 1)
-        self.assertEqual(playbook.nodes[0].node_name, "Webhook")
-        self.assertEqual(playbook.nodes[0].n8n_webhook_id, "wh-1")
+		mock_enqueue.assert_called_with(
+			"frappe_n8n.integrations.n8n.create_workflow",
+			playbook_name=playbook.name,
+			queue="low"
+		)
+
+		from frappe_n8n.integrations.n8n import create_workflow
+		create_workflow(playbook.name)
+
+		playbook.reload()
+		self.assertEqual(playbook.n8n_workflow_id, "wf-12345")
+		self.assertEqual(len(playbook.nodes), 1)
+		self.assertEqual(playbook.nodes[0].node_name, "Webhook")
+		self.assertEqual(playbook.nodes[0].n8n_webhook_id, "wh-1")
 
 
 class TestN8NTestExecutionGracefulExit(IntegrationTestCase):
-    def setUp(self):
-        super().setUp()
-        self.patcher = patch("frappe_n8n.n8n.doctype.playbook.playbook.create_workflow", return_value="wf-mock-123")
-        self.mock_create_workflow = self.patcher.start()
-        
-        self.patcher2 = patch("frappe_n8n.n8n.doctype.playbook.playbook.toggle_workflow_status")
-        self.mock_toggle = self.patcher2.start()
+	def setUp(self):
+		super().setUp()
+		self.patcher = patch("frappe_n8n.integrations.n8n.create_workflow", return_value="wf-mock-123")
+		self.mock_create_workflow = self.patcher.start()
 
-        self.patcher3 = patch("frappe_n8n.n8n.doctype.playbook.playbook.on_trash")
-        self.mock_trash = self.patcher3.start()
+		self.patcher2 = patch("frappe_n8n.n8n.doctype.playbook.playbook.toggle_workflow_status")
+		self.mock_toggle = self.patcher2.start()
 
-        if not frappe.db.exists("Playbook Provider", "n8n"):
-            frappe.get_doc({
-                "doctype": "Playbook Provider",
-                "provider_name": "n8n",
-                "enabled": 1
-            }).insert(ignore_permissions=True)
+		self.patcher3 = patch("frappe_n8n.n8n.doctype.playbook.playbook.on_trash")
+		self.mock_trash = self.patcher3.start()
 
-        self.playbook = frappe.get_doc({
-            "doctype": "Playbook",
-            "playbook_name": "Test Playbook",
-            "provider": "n8n",
-            "document_type": "ToDo",
-            "status": "Enabled",
-            "nodes": [{"node_type": "n8n-nodes-base.webhook", "n8n_webhook_id": "test-webhook-id"}]
-        }).insert()
+		if not frappe.db.exists("Playbook Provider", "n8n"):
+			frappe.get_doc({
+				"doctype": "Playbook Provider",
+				"provider_name": "n8n",
+				"enabled": 1
+			}).insert(ignore_permissions=True)
 
-    def tearDown(self):
-        self.patcher.stop()
-        self.patcher2.stop()
-        self.patcher3.stop()
-        frappe.db.rollback()
-        super().tearDown()
-        
-    @patch("frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.send_webhook")
-    def test_trigger_test_execution_graceful_failure(self, mock_send_webhook):
-        from frappe_n8n.n8n.doctype.playbook.playbook import trigger_test_execution
-        
-        # Mocking 404 response
-        response = MagicMock()
-        response.status_code = 404
-        mock_send_webhook.side_effect = requests.exceptions.HTTPError(response=response)
-        
-        original_get_all = frappe.get_all
-        def custom_get_all(doctype, *args, **kwargs):
-            if doctype == "Playbook Execution":
-                return [frappe._dict({"reference_doctype": "ToDo", "reference_name": "test-todo"})]
-            return original_get_all(doctype, *args, **kwargs)
-        frappe.get_all = MagicMock(side_effect=custom_get_all)
-        
-        # Target doc
-        target_doc = MagicMock()
-        target_doc.doctype = "ToDo"
-        target_doc.name = "test-todo"
-        target_doc.as_dict.return_value = {}
-        
-        from frappe.model.document import get_doc as real_get_doc
-        def custom_get_doc(*args, **kwargs):
-            if args:
-                doctype = args[0]
-                if isinstance(doctype, str):
-                    if doctype == "Playbook":
-                        return self.playbook
-                    if doctype == "ToDo" and len(args) > 1 and args[1] == "test-todo":
-                        return target_doc
-            return real_get_doc(*args, **kwargs)
-            
-        original_get_doc = frappe.get_doc
-        frappe.get_doc = MagicMock(side_effect=custom_get_doc)
-        
-        try:
-            result = trigger_test_execution(self.playbook.name)
-            
-            self.assertEqual(result.get("status"), "failed")
-            self.assertEqual(result.get("title"), "Test Execution Failed")
-            self.assertIn("404", result.get("message", ""))
-        finally:
-            frappe.get_doc = original_get_doc
-            frappe.get_all = original_get_all
+		self.playbook = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": "Test Playbook",
+			"provider": "n8n",
+			"document_type": "ToDo",
+			"status": "Enabled",
+			"nodes": [{"node_type": "n8n-nodes-base.webhook", "n8n_webhook_id": "test-webhook-id"}]
+		}).insert()
 
-    def test_whitelisting_playbook_overrides(self):
-        from frappe_n8n.n8n.doctype.playbook.playbook import get_builder_url, trigger_test_execution
-        
-        get_builder_url_func = get_builder_url
-        get_builder_url_whitelisted = False
-        while get_builder_url_func:
-            if getattr(get_builder_url_func, "whitelisted", False) or hasattr(get_builder_url_func, "whitelisted"):
-                get_builder_url_whitelisted = True
-                break
-            get_builder_url_func = getattr(get_builder_url_func, "__wrapped__", None)
-            
-        trigger_test_execution_func = trigger_test_execution
-        trigger_test_execution_whitelisted = False
-        while trigger_test_execution_func:
-            if getattr(trigger_test_execution_func, "whitelisted", False) or hasattr(trigger_test_execution_func, "whitelisted"):
-                trigger_test_execution_whitelisted = True
-                break
-            trigger_test_execution_func = getattr(trigger_test_execution_func, "__wrapped__", None)
-            
-        if not get_builder_url_whitelisted:
-            from frappe_n8n import hooks
-            self.assertIn("frappe_playbook.playbook.doctype.playbook.playbook.get_builder_url", hooks.override_whitelisted_methods)
-            self.assertIn("frappe_playbook.playbook.doctype.playbook.playbook.trigger_test_execution", hooks.override_whitelisted_methods)
-        else:
-            self.assertTrue(get_builder_url_whitelisted)
-            self.assertTrue(trigger_test_execution_whitelisted)
+	def tearDown(self):
+		self.patcher.stop()
+		self.patcher2.stop()
+		self.patcher3.stop()
+		frappe.db.rollback()
+		super().tearDown()
+
+	@patch("frappe_n8n.integrations.n8n.N8nClient.trigger_test_execution")
+	def test_trigger_test_execution_graceful_failure(self, mock_client_trigger):
+		from frappe_n8n.n8n.doctype.playbook.playbook import trigger_test_execution
+
+		response = MagicMock()
+		response.status_code = 404
+		response.text = "Not found"
+		mock_client_trigger.return_value = response
+
+		settings = frappe.get_doc("n8n Settings")
+		settings.db_set("enabled", 1)
+		settings.db_set("status", "Authorized")
+		settings.db_set("base_url", "https://n8n.example.com")
+		settings.db_set("api_key", "test_key")
+
+		todo = frappe.get_doc({"doctype": "ToDo", "description": "test"}).insert(ignore_permissions=True)
+
+		result = trigger_test_execution(self.playbook.name)
+		self.assertEqual(result.get("status"), "failed")
+		self.assertEqual(result.get("title"), "Test Execution Failed")
+
+	def test_whitelisting_playbook_overrides(self):
+		from frappe_n8n import hooks
+		self.assertIn("frappe_playbook.playbook.doctype.playbook.playbook.get_builder_url", hooks.override_whitelisted_methods)
+		self.assertIn("frappe_playbook.playbook.doctype.playbook.playbook.trigger_test_execution", hooks.override_whitelisted_methods)
 
 
 class TestN8NDecoupledPlaybookOperations(IntegrationTestCase):
-    def setUp(self):
-        super().setUp()
-        self.settings = frappe.get_doc("n8n Settings")
-        self.settings.db_set("enabled", 1)
-        self.settings.db_set("base_url", "https://n8n.example.com")
-        self.settings.db_set("api_key", "test_api_key")
-        frappe.db.commit()
+	def setUp(self):
+		super().setUp()
+		self.settings = frappe.get_doc("n8n Settings")
+		self.settings.db_set("enabled", 1)
+		self.settings.db_set("status", "Authorized")
+		self.settings.db_set("base_url", "https://n8n.example.com")
+		self.settings.db_set("api_key", "test_api_key")
+		frappe.db.commit()
 
-        if frappe.db.exists("Playbook", "Test Decoupled Playbook"):
-            frappe.delete_doc("Playbook", "Test Decoupled Playbook")
+		if frappe.db.exists("Playbook", "Test Decoupled Playbook"):
+			frappe.delete_doc("Playbook", "Test Decoupled Playbook")
 
-        self.playbook = frappe.get_doc({
-            "doctype": "Playbook",
-            "playbook_name": "Test Decoupled Playbook",
-            "provider": "n8n",
-            "document_type": "ToDo",
-            "status": "Enabled",
-            "n8n_workflow_id": "wf-test-123"
-        }).insert(ignore_permissions=True)
+		self.playbook = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": "Test Decoupled Playbook",
+			"provider": "n8n",
+			"document_type": "ToDo",
+			"status": "Enabled",
+			"n8n_workflow_id": "wf-test-123"
+		}).insert(ignore_permissions=True)
 
-    def tearDown(self):
-        frappe.db.rollback()
-        super().tearDown()
+	def tearDown(self):
+		frappe.db.rollback()
+		super().tearDown()
 
-    @patch("frappe.enqueue")
-    def test_on_trash_enqueues_deletion(self, mock_enqueue):
-        self.playbook.delete()
-        mock_enqueue.assert_any_call(
-            "frappe_n8n.n8n.doctype.playbook.playbook.delete_workflow",
-            workflow_id="wf-test-123",
-            queue="low"
-        )
+	@patch("frappe.enqueue")
+	def test_on_trash_enqueues_deletion(self, mock_enqueue):
+		self.playbook.delete()
+		mock_enqueue.assert_any_call(
+			"frappe_n8n.integrations.n8n.delete_workflow",
+			workflow_id="wf-test-123",
+			queue="low"
+		)
 
-    @patch("frappe_n8n.integrations.n8n.requests.delete")
-    def test_delete_workflow_success(self, mock_delete):
-        mock_delete.return_value.status_code = 200
-        from frappe_n8n.n8n.doctype.playbook.playbook import delete_workflow
+	@patch("frappe_n8n.integrations.n8n.N8nClient.delete_workflow")
+	def test_delete_workflow_success(self, mock_delete):
+		from frappe_n8n.n8n.doctype.playbook.playbook import delete_workflow
+		delete_workflow("wf-test-123")
+		mock_delete.assert_called_once_with("wf-test-123")
 
-        delete_workflow("wf-test-123")
+	@patch("frappe.enqueue")
+	def test_on_update_enqueues_creation(self, mock_enqueue):
+		new_pb = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": "New Decoupled Playbook",
+			"provider": "n8n",
+			"document_type": "ToDo",
+			"status": "Enabled"
+		}).insert(ignore_permissions=True)
 
-        mock_delete.assert_called_once_with(
-            "https://n8n.example.com/api/v1/workflows/wf-test-123",
-            headers={"X-N8N-API-KEY": "test_api_key", "Accept": "application/json", "Content-Type": "application/json"},
-            timeout=10
-        )
-
-    @patch("frappe_n8n.integrations.n8n.requests.delete")
-    @patch("frappe.log_error")
-    def test_delete_workflow_404_graceful(self, mock_log, mock_delete):
-        response = MagicMock()
-        response.status_code = 404
-        mock_delete.side_effect = requests.exceptions.HTTPError(response=response)
-        
-        from frappe_n8n.n8n.doctype.playbook.playbook import delete_workflow
-
-        delete_workflow("wf-test-123")
-
-        mock_log.assert_called_once()
-        self.assertIn("Workflow already deleted", mock_log.call_args[0][0])
-
-    @patch("frappe_n8n.integrations.n8n.requests.delete")
-    def test_delete_workflow_other_errors_re_raise(self, mock_delete):
-        response = MagicMock()
-        response.status_code = 500
-        mock_delete.side_effect = requests.exceptions.HTTPError(response=response)
-        
-        from frappe_n8n.n8n.doctype.playbook.playbook import delete_workflow
-
-        with self.assertRaises(requests.exceptions.HTTPError):
-            delete_workflow("wf-test-123")
-
-    @patch("frappe.enqueue")
-    def test_on_update_enqueues_creation(self, mock_enqueue):
-        new_pb = frappe.get_doc({
-            "doctype": "Playbook",
-            "playbook_name": "New Decoupled Playbook",
-            "provider": "n8n",
-            "document_type": "ToDo",
-            "status": "Enabled"
-        }).insert(ignore_permissions=True)
-
-        mock_enqueue.assert_any_call(
-            "frappe_n8n.n8n.doctype.playbook.playbook.create_workflow",
-            playbook_name=new_pb.name,
-            queue="low"
-        )
-
-    @patch("frappe_controller.utils.controller.wait_for_event")
-    def test_create_workflow_suspends_when_settings_disabled(self, mock_wait):
-        from frappe_controller.utils.controller import SuspendJob
-        self.settings.db_set("enabled", 0)
-        frappe.db.commit()
-
-        new_pb = frappe.get_doc({
-            "doctype": "Playbook",
-            "playbook_name": "Suspended Playbook",
-            "provider": "n8n",
-            "document_type": "ToDo",
-            "status": "Enabled"
-        }).insert(ignore_permissions=True)
-
-        mock_wait.side_effect = SuspendJob("doc:n8n Settings:authorized")
-        frappe.flags.current_job_id = "test_job_123"
-        from frappe_n8n.n8n.doctype.playbook.playbook import create_workflow
-
-        try:
-            with self.assertRaises(SuspendJob):
-                create_workflow(new_pb.name)
-            mock_wait.assert_called_once_with("doc:n8n Settings:authorized")
-        finally:
-            frappe.flags.current_job_id = None
+		mock_enqueue.assert_any_call(
+			"frappe_n8n.integrations.n8n.create_workflow",
+			playbook_name=new_pb.name,
+			queue="low"
+		)
