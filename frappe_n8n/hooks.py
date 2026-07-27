@@ -17,6 +17,13 @@ scheduler_events = {
 }
 
 controller_events = {
+    "frappe_n8n.integrations.n8n.update_credential": {},
+    "frappe_n8n.integrations.n8n.rotate_credentials": {},
+    "frappe_n8n.integrations.n8n.create_workflow": {},
+    "frappe_n8n.integrations.n8n.move_workflow": {},
+    "frappe_n8n.integrations.n8n.enable_workflow": {},
+    "frappe_n8n.integrations.n8n.disable_workflow": {},
+    "frappe_n8n.integrations.n8n.delete_workflow": {},
     "frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.update_a_playbook": {},
     "frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.retrieve_workflow": {},
     "frappe_n8n.n8n.doctype.playbook.playbook.create_workflow": {},
