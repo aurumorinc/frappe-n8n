@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Aquiveal and Contributors
+# Copyright (c) 2026, Aurumor and Contributors
 # See license.txt
 
 import os
