@@ -37,6 +37,18 @@ def retrieve_workflow(playbook_name):
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         return response.json()
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None and e.response.status_code == 404:
+            frappe.log_error(
+                f"Workflow {playbook_doc.n8n_workflow_id} not found in n8n (404) for Playbook {playbook_name}. Clearing workflow ID and reprovisioning.",
+                "n8n Integration Warning"
+            )
+            playbook_doc.db_set("n8n_workflow_id", None)
+            from frappe_n8n.n8n.doctype.playbook.playbook import enqueue_create_workflow
+            enqueue_create_workflow(playbook_name)
+            return None
+        frappe.log_error(f"Failed to retrieve n8n workflow: {str(e)}", "n8n Integration Error")
+        frappe.throw(f"Failed to retrieve workflow in n8n. Error: {str(e)}")
     except requests.exceptions.RequestException as e:
         frappe.log_error(f"Failed to retrieve n8n workflow: {str(e)}", "n8n Integration Error")
         frappe.throw(f"Failed to retrieve workflow in n8n. Error: {str(e)}")
