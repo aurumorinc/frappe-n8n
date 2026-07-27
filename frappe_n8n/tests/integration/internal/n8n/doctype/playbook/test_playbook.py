@@ -1,7 +1,12 @@
+# Copyright (c) 2026, Aquiveal and Contributors
+# See license.txt
+
 import frappe
 from frappe.tests import IntegrationTestCase
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import json
+import requests
+
 
 class TestN8nPlaybook(IntegrationTestCase):
     @classmethod
@@ -16,8 +21,8 @@ class TestN8nPlaybook(IntegrationTestCase):
         frappe.db.rollback()
         super().tearDown()
 
-    @patch("requests.put")
-    @patch("requests.post")
+    @patch("frappe_n8n.integrations.n8n.requests.put")
+    @patch("frappe_n8n.integrations.n8n.requests.post")
     @patch("frappe.enqueue")
     def test_on_playbook_after_insert_creates_workflow(self, mock_enqueue, mock_post, mock_put):
         mock_post.return_value.status_code = 200
@@ -62,8 +67,7 @@ class TestN8nPlaybook(IntegrationTestCase):
         self.assertEqual(len(playbook.nodes), 1)
         self.assertEqual(playbook.nodes[0].node_name, "Webhook")
         self.assertEqual(playbook.nodes[0].n8n_webhook_id, "wh-1")
-from unittest.mock import patch, MagicMock
-import requests
+
 
 class TestN8NTestExecutionGracefulExit(IntegrationTestCase):
     def setUp(self):
@@ -183,7 +187,6 @@ class TestN8NDecoupledPlaybookOperations(IntegrationTestCase):
         self.settings.db_set("api_key", "test_api_key")
         frappe.db.commit()
 
-        # Let's clean up any existing Playbook with the name "Test Decoupled Playbook"
         if frappe.db.exists("Playbook", "Test Decoupled Playbook"):
             frappe.delete_doc("Playbook", "Test Decoupled Playbook")
 
@@ -197,73 +200,58 @@ class TestN8NDecoupledPlaybookOperations(IntegrationTestCase):
         }).insert(ignore_permissions=True)
 
     def tearDown(self):
-        # Strict rollback to ensure absolutely no orphaned records are left in database
         frappe.db.rollback()
         super().tearDown()
 
     @patch("frappe.enqueue")
     def test_on_trash_enqueues_deletion(self, mock_enqueue):
-        # Act
         self.playbook.delete()
-
-        # Assert
         mock_enqueue.assert_any_call(
             "frappe_n8n.n8n.doctype.playbook.playbook.delete_workflow",
             workflow_id="wf-test-123",
             queue="low"
         )
 
-    @patch("requests.delete")
+    @patch("frappe_n8n.integrations.n8n.requests.delete")
     def test_delete_workflow_success(self, mock_delete):
         mock_delete.return_value.status_code = 200
         from frappe_n8n.n8n.doctype.playbook.playbook import delete_workflow
 
-        # Act
         delete_workflow("wf-test-123")
 
-        # Assert
         mock_delete.assert_called_once_with(
             "https://n8n.example.com/api/v1/workflows/wf-test-123",
-            headers={"X-N8N-API-KEY": "test_api_key", "Accept": "application/json"},
+            headers={"X-N8N-API-KEY": "test_api_key", "Accept": "application/json", "Content-Type": "application/json"},
             timeout=10
         )
 
-    @patch("requests.delete")
+    @patch("frappe_n8n.integrations.n8n.requests.delete")
     @patch("frappe.log_error")
     def test_delete_workflow_404_graceful(self, mock_log, mock_delete):
-        from unittest.mock import MagicMock
-        import requests
-        # Mocking 404 error
         response = MagicMock()
         response.status_code = 404
         mock_delete.side_effect = requests.exceptions.HTTPError(response=response)
         
         from frappe_n8n.n8n.doctype.playbook.playbook import delete_workflow
 
-        # Act
         delete_workflow("wf-test-123")
 
-        # Assert (Verify it logs gracefully and does not throw)
         mock_log.assert_called_once()
         self.assertIn("Workflow already deleted", mock_log.call_args[0][0])
 
-    @patch("requests.delete")
+    @patch("frappe_n8n.integrations.n8n.requests.delete")
     def test_delete_workflow_other_errors_re_raise(self, mock_delete):
-        from unittest.mock import MagicMock
-        import requests
         response = MagicMock()
         response.status_code = 500
         mock_delete.side_effect = requests.exceptions.HTTPError(response=response)
         
         from frappe_n8n.n8n.doctype.playbook.playbook import delete_workflow
 
-        # Act & Assert
         with self.assertRaises(requests.exceptions.HTTPError):
             delete_workflow("wf-test-123")
 
     @patch("frappe.enqueue")
     def test_on_update_enqueues_creation(self, mock_enqueue):
-        # Setup dummy playbook with no ID
         new_pb = frappe.get_doc({
             "doctype": "Playbook",
             "playbook_name": "New Decoupled Playbook",
@@ -272,7 +260,6 @@ class TestN8NDecoupledPlaybookOperations(IntegrationTestCase):
             "status": "Enabled"
         }).insert(ignore_permissions=True)
 
-        # Assert that create_workflow was enqueued
         mock_enqueue.assert_any_call(
             "frappe_n8n.n8n.doctype.playbook.playbook.create_workflow",
             playbook_name=new_pb.name,
@@ -282,7 +269,6 @@ class TestN8NDecoupledPlaybookOperations(IntegrationTestCase):
     @patch("frappe_controller.utils.controller.wait_for_event")
     def test_create_workflow_suspends_when_settings_disabled(self, mock_wait):
         from frappe_controller.utils.controller import SuspendJob
-        # Set settings enabled to 0
         self.settings.db_set("enabled", 0)
         frappe.db.commit()
 
@@ -294,11 +280,13 @@ class TestN8NDecoupledPlaybookOperations(IntegrationTestCase):
             "status": "Enabled"
         }).insert(ignore_permissions=True)
 
-        mock_wait.side_effect = SuspendJob("doc:n8n Settings:on_update")
+        mock_wait.side_effect = SuspendJob("doc:n8n Settings:authorized")
+        frappe.flags.current_job_id = "test_job_123"
         from frappe_n8n.n8n.doctype.playbook.playbook import create_workflow
 
-        # Act & Assert
-        with self.assertRaises(SuspendJob):
-            create_workflow(new_pb.name)
-
-        mock_wait.assert_called_once_with("doc:n8n Settings:on_update")
+        try:
+            with self.assertRaises(SuspendJob):
+                create_workflow(new_pb.name)
+            mock_wait.assert_called_once_with("doc:n8n Settings:authorized")
+        finally:
+            frappe.flags.current_job_id = None
