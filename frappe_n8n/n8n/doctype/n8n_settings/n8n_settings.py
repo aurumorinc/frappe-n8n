@@ -1,4 +1,4 @@
-# Copyright (c) 2026, Aquiveal and contributors
+# Copyright (c) 2026, Aurumor and contributors
 # For license information, please see license.txt
 
 import requests
