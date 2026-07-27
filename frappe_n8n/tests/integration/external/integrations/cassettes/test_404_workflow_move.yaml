@@ -1,0 +1,22 @@
+interactions:
+- request:
+    body: '{"destinationProjectId": "proj_dest_456"}'
+    headers:
+      Accept:
+      - application/json
+      Content-Type:
+      - application/json
+      X-N8N-API-KEY:
+      - dummy_api_key
+    method: PUT
+    uri: https://n8n.example.com/api/v1/workflows/wf_stale_999/transfer
+  response:
+    body:
+      string: '{"message": "Workflow not found"}'
+    headers:
+      Content-Type:
+      - application/json
+    status:
+      code: 404
+      message: Not Found
+version: 1

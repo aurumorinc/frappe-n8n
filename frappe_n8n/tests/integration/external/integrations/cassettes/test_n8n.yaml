@@ -1,0 +1,82 @@
+interactions:
+- request:
+    body: null
+    headers:
+      Accept:
+      - application/json
+      Content-Type:
+      - application/json
+      X-N8N-API-KEY:
+      - dummy_api_key
+    method: GET
+    uri: https://n8n.example.com/api/v1/projects
+  response:
+    body:
+      string: '{"data":[{"id":"proj_personal_123","name":"Personal","type":"personal"}]}'
+    headers:
+      Content-Type:
+      - application/json
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"name": "VCR Test Workflow", "nodes": [], "connections": {}, "settings": {}}'
+    headers:
+      Accept:
+      - application/json
+      Content-Type:
+      - application/json
+      X-N8N-API-KEY:
+      - dummy_api_key
+    method: POST
+    uri: https://n8n.example.com/api/v1/workflows
+  response:
+    body:
+      string: '{"id":"wf_vcr_001","name":"VCR Test Workflow","nodes":[],"connections":{}}'
+    headers:
+      Content-Type:
+      - application/json
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"destinationProjectId": "proj_dest_456"}'
+    headers:
+      Accept:
+      - application/json
+      Content-Type:
+      - application/json
+      X-N8N-API-KEY:
+      - dummy_api_key
+    method: PUT
+    uri: https://n8n.example.com/api/v1/workflows/wf_vcr_001/transfer
+  response:
+    body:
+      string: '{"success": true}'
+    headers:
+      Content-Type:
+      - application/json
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"destinationProjectId": "proj_dest_456"}'
+    headers:
+      Accept:
+      - application/json
+      Content-Type:
+      - application/json
+      X-N8N-API-KEY:
+      - dummy_api_key
+    method: PUT
+    uri: https://n8n.example.com/api/v1/workflows/wf_stale_999/transfer
+  response:
+    body:
+      string: '{"message": "Workflow not found"}'
+    headers:
+      Content-Type:
+      - application/json
+    status:
+      code: 404
+      message: Not Found
+version: 1

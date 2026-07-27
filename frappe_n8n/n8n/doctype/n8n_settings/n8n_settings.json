@@ -9,6 +9,7 @@
   "base_url",
   "api_key",
   "enabled",
+  "status",
   "webhook_security",
   "webhook_credential_id",
   "project_id"
@@ -29,6 +30,14 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled"
+  },
+  {
+   "default": "Disabled",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Disabled\nAuthorized\nUnauthorized",
+   "read_only": 1
   },
   {
    "description": "Optional token to verify incoming webhooks from n8n",

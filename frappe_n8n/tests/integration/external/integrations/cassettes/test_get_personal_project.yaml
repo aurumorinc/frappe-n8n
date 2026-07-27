@@ -1,0 +1,22 @@
+interactions:
+- request:
+    body: null
+    headers:
+      Accept:
+      - application/json
+      Content-Type:
+      - application/json
+      X-N8N-API-KEY:
+      - dummy_api_key
+    method: GET
+    uri: https://n8n.example.com/api/v1/projects
+  response:
+    body:
+      string: '{"data":[{"id":"proj_personal_123","name":"Personal","type":"personal"}]}'
+    headers:
+      Content-Type:
+      - application/json
+    status:
+      code: 200
+      message: OK
+version: 1
