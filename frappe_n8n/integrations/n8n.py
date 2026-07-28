@@ -139,7 +139,12 @@ class N8nClient:
 
 	def move_credential(self, credential_id: str, destination_project_id: str) -> None:
 		payload = {"destinationProjectId": destination_project_id}
-		self._request("PUT", f"/api/v1/credentials/{credential_id}/transfer", json=payload)
+		try:
+			self._request("PUT", f"/api/v1/credentials/{credential_id}/transfer", json=payload)
+		except N8nError as e:
+			if e.status_code == 400 and ("same destination" in str(e).lower() or "already belongs" in str(e).lower()):
+				return
+			raise
 
 	def get_workflow(self, workflow_id: str) -> dict:
 		res = self._request("GET", f"/api/v1/workflows/{workflow_id}")
@@ -157,7 +162,12 @@ class N8nClient:
 
 	def move_workflow(self, workflow_id: str, destination_project_id: str) -> None:
 		payload = {"destinationProjectId": destination_project_id}
-		self._request("PUT", f"/api/v1/workflows/{workflow_id}/transfer", json=payload)
+		try:
+			self._request("PUT", f"/api/v1/workflows/{workflow_id}/transfer", json=payload)
+		except N8nError as e:
+			if e.status_code == 400 and ("same destination" in str(e).lower() or "already belongs" in str(e).lower()):
+				return
+			raise
 
 	def activate_workflow(self, workflow_id: str) -> None:
 		self._request("POST", f"/api/v1/workflows/{workflow_id}/activate")
@@ -172,8 +182,13 @@ class N8nClient:
 			frappe.log_error("Workflow already deleted in n8n (404).", "n8n Integration Error")
 
 	def stop_execution(self, execution_id: str) -> dict:
-		res = self._request("POST", f"/api/v1/executions/{execution_id}/stop")
-		return res.json()
+		try:
+			res = self._request("POST", f"/api/v1/executions/{execution_id}/stop")
+			return res.json()
+		except N8nError as e:
+			if e.status_code == 400 and any(msg in str(e).lower() for msg in ["not running", "cannot be stopped", "already finished", "already stopped"]):
+				return {}
+			raise
 
 	def trigger_execution(self, webhook_id: str, payload: dict, execution_name: str, webhook_security: str | None = None) -> requests.Response:
 		headers = dict(self.headers)
@@ -438,15 +453,41 @@ def trigger_test_execution(playbook_name: str, payload: dict, execution_name: st
 			"message": "n8n Settings is not authorized.",
 		}
 
+	playbook_doc = frappe.get_doc("Playbook", playbook_name)
+	if not playbook_doc.n8n_workflow_id:
+		create_workflow(playbook_name)
+		playbook_doc.reload()
+
 	from frappe_n8n.n8n.doctype.playbook_provider.playbook_provider import update_a_playbook
 	update_a_playbook(playbook_name)
+	playbook_doc.reload()
 
-	playbook_doc = frappe.get_doc("Playbook", playbook_name)
+	if config.get("project_id"):
+		move_workflow(playbook_name, config["project_id"])
+		playbook_doc.reload()
+
 	webhook_id = None
 	for node in playbook_doc.get("nodes", []):
 		if getattr(node, "n8n_webhook_id", None):
 			webhook_id = node.n8n_webhook_id
 			break
+		elif "webhook" in str(getattr(node, "node_type", "")).lower() and getattr(node, "n8n_node_id", None):
+			webhook_id = node.n8n_node_id
+			break
+
+	if not webhook_id and getattr(playbook_doc, "playbook_data", None):
+		try:
+			pb_data = json.loads(playbook_doc.playbook_data) if isinstance(playbook_doc.playbook_data, str) else playbook_doc.playbook_data
+			if isinstance(pb_data, dict):
+				for node in pb_data.get("nodes", []):
+					node_type = str(node.get("type", "")).lower()
+					if "webhook" in node_type or node.get("webhookId"):
+						node_params = node.get("parameters") if isinstance(node.get("parameters"), dict) else {}
+						webhook_id = node.get("webhookId") or node_params.get("path") or node.get("id")
+						if webhook_id:
+							break
+		except Exception:
+			pass
 
 	if not webhook_id:
 		return {
@@ -529,6 +570,23 @@ def trigger_execution(playbook_name: str, payload: dict, execution_name: str, we
 			if getattr(node, "n8n_webhook_id", None):
 				webhook_id = node.n8n_webhook_id
 				break
+			elif "webhook" in str(getattr(node, "node_type", "")).lower() and getattr(node, "n8n_node_id", None):
+				webhook_id = node.n8n_node_id
+				break
+
+	if not webhook_id and getattr(playbook_doc, "playbook_data", None):
+		try:
+			pb_data = json.loads(playbook_doc.playbook_data) if isinstance(playbook_doc.playbook_data, str) else playbook_doc.playbook_data
+			if isinstance(pb_data, dict):
+				for node in pb_data.get("nodes", []):
+					node_type = str(node.get("type", "")).lower()
+					if "webhook" in node_type or node.get("webhookId"):
+						node_params = node.get("parameters") if isinstance(node.get("parameters"), dict) else {}
+						webhook_id = node.get("webhookId") or node_params.get("path") or node.get("id")
+						if webhook_id:
+							break
+		except Exception:
+			pass
 
 	if not webhook_id:
 		frappe.log_error("No webhook ID found for execution", "n8n Execution Error")
