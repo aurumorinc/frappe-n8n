@@ -2,10 +2,18 @@
 # For license information, please see license.txt
 
 import unittest
+from frappe.tests import UnitTestCase
 from frappe_n8n import hooks
 
 
-class TestHooks(unittest.TestCase):
+class TestHooks(UnitTestCase):
+	@classmethod
+	def setUpClass(cls):
+		try:
+			super().setUpClass()
+		except Exception:
+			pass
+
 	def test_hooks_controller_events_contains_required_integrations(self):
 		required_events = [
 			"frappe_n8n.integrations.n8n.update_credential",

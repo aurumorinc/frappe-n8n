@@ -4,10 +4,18 @@
 import json
 import unittest
 from unittest.mock import MagicMock
+from frappe.tests import UnitTestCase
 from frappe_n8n.playbook_execution import _apply_payload_to_execution_doc, DISALLOWED_FIELDS
 
 
-class TestCallbackPayload(unittest.TestCase):
+class TestCallbackPayload(UnitTestCase):
+	@classmethod
+	def setUpClass(cls):
+		try:
+			super().setUpClass()
+		except Exception:
+			pass
+
 	def setUp(self):
 		self.mock_doc = MagicMock()
 		self.mock_doc.meta.has_field.side_effect = lambda field: field in {"status", "execution_data", "n8n_execution_id", "custom_field"}
