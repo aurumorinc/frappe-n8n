@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 import requests
 import frappe
+from frappe.tests import UnitTestCase
 from frappe_n8n.integrations.n8n import (
 	N8nClient,
 	N8nError,
@@ -12,7 +13,14 @@ from frappe_n8n.integrations.n8n import (
 )
 
 
-class TestN8nClient(unittest.TestCase):
+class TestN8nClient(UnitTestCase):
+	@classmethod
+	def setUpClass(cls):
+		try:
+			super().setUpClass()
+		except Exception:
+			pass
+
 	def setUp(self):
 		self.base_url = "http://n8n.test:5678/"
 		self.api_key = "test-api-key"
@@ -126,6 +134,15 @@ class TestN8nClient(unittest.TestCase):
 		self.client.move_credential("cred-123", "proj-456")
 		mock_put.assert_called_once()
 
+	@patch("requests.put")
+	def test_n8n_client_move_credential_same_destination_idempotent(self, mock_put):
+		mock_res = MagicMock()
+		mock_res.status_code = 400
+		mock_res.text = '{"message":"You can\'t transfer a credential into the same destination it already belongs to."}'
+		mock_put.return_value = mock_res
+		# Should not raise exception
+		self.client.move_credential("cred-123", "proj-456")
+
 	@patch("requests.get")
 	def test_n8n_client_get_workflow(self, mock_get):
 		mock_res = MagicMock()
@@ -151,6 +168,25 @@ class TestN8nClient(unittest.TestCase):
 		mock_put.return_value = mock_res
 		self.client.move_workflow("wf-123", "proj-789")
 		mock_put.assert_called_once()
+
+	@patch("requests.put")
+	def test_n8n_client_move_workflow_same_destination_idempotent(self, mock_put):
+		mock_res = MagicMock()
+		mock_res.status_code = 400
+		mock_res.text = '{"message":"You can\'t transfer a workflow into the same destination it already belongs to."}'
+		mock_put.return_value = mock_res
+		# Should not raise exception
+		self.client.move_workflow("wf-123", "proj-789")
+
+	@patch("requests.put")
+	def test_n8n_client_move_workflow_other_400_raises(self, mock_put):
+		from frappe_n8n.integrations.n8n import N8nError
+		mock_res = MagicMock()
+		mock_res.status_code = 400
+		mock_res.text = '{"message":"Invalid project format"}'
+		mock_put.return_value = mock_res
+		with self.assertRaises(N8nError):
+			self.client.move_workflow("wf-123", "proj-invalid")
 
 	@patch("requests.post")
 	def test_n8n_client_activate_workflow(self, mock_post):
@@ -186,6 +222,15 @@ class TestN8nClient(unittest.TestCase):
 		self.assertEqual(res["status"], "stopped")
 
 	@patch("requests.post")
+	def test_n8n_client_stop_execution_not_running_idempotent(self, mock_post):
+		mock_res = MagicMock()
+		mock_res.status_code = 400
+		mock_res.text = '{"message":"Execution is not running"}'
+		mock_post.return_value = mock_res
+		res = self.client.stop_execution("exec-123")
+		self.assertEqual(res, {})
+
+	@patch("requests.post")
 	def test_n8n_client_trigger_execution(self, mock_post):
 		mock_res = MagicMock()
 		mock_res.status_code = 200
@@ -200,6 +245,52 @@ class TestN8nClient(unittest.TestCase):
 		mock_post.return_value = mock_res
 		res = self.client.trigger_test_execution("hook-1", {"a": 1}, "test-exec-1", webhook_security="sec")
 		self.assertEqual(res.status_code, 200)
+
+	@patch("frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.retrieve_workflow")
+	@patch("frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.frappe")
+	def test_update_a_playbook_webhook_id_fallback_chain(self, mock_frappe, mock_retrieve):
+		from frappe_n8n.n8n.doctype.playbook_provider.playbook_provider import update_a_playbook
+
+		# Case 1: Node with parameters.path fallback
+		mock_retrieve.return_value = {
+			"active": True,
+			"nodes": [
+				{
+					"id": "node-id-111",
+					"name": "Webhook",
+					"type": "n8n-nodes-base.webhook",
+					"parameters": {"path": "param-path-222"}
+				}
+			],
+			"connections": {}
+		}
+		mock_doc = MagicMock()
+		mock_frappe.get_doc.return_value = mock_doc
+
+		update_a_playbook("PB-1")
+
+		mock_doc.set.assert_called_with("nodes", [])
+		self.assertEqual(mock_doc.append.call_count, 1)
+		node_args = mock_doc.append.call_args[0][1]
+		self.assertEqual(node_args["n8n_webhook_id"], "param-path-222")
+
+		# Case 2: Node with node.id fallback when parameters.path is missing
+		mock_retrieve.return_value = {
+			"active": True,
+			"nodes": [
+				{
+					"id": "node-id-333",
+					"name": "Webhook",
+					"type": "n8n-nodes-base.webhook",
+					"parameters": {}
+				}
+			],
+			"connections": {}
+		}
+		mock_doc.reset_mock()
+		update_a_playbook("PB-1")
+		node_args = mock_doc.append.call_args[0][1]
+		self.assertEqual(node_args["n8n_webhook_id"], "node-id-333")
 
 	@patch("requests.post")
 	def test_n8n_client_resume_execution(self, mock_post):

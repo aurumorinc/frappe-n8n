@@ -51,14 +51,21 @@ def update_a_playbook(playbook_name):
 	# Child Table Nodes
 	playbook_doc.set("nodes", [])
 	for node in playbook_data.get("nodes", []):
+		node_type = node.get("type", "")
+		node_params = node.get("parameters") if isinstance(node.get("parameters"), dict) else {}
+		webhook_id = (
+			node.get("webhookId")
+			or node_params.get("path")
+			or (node.get("id") if "webhook" in str(node_type).lower() else "")
+		)
 		playbook_doc.append("nodes", {
 			"node_name": node.get("name"),
-			"node_type": node.get("type"),
+			"node_type": node_type,
 			"disabled": node.get("disabled", False),
 			"retry_on_fail": node.get("retryOnFail", False),
 			"on_error": node.get("onError", ""),
 			"n8n_node_id": node.get("id"),
-			"n8n_webhook_id": node.get("webhookId", "")
+			"n8n_webhook_id": webhook_id or ""
 		})
 
 	frappe.flags.in_playbook_sync = True

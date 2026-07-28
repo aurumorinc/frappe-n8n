@@ -170,6 +170,26 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 		disable_workflow(pb.name)
 		mock_deactivate.assert_called_once_with("wf-disable-123")
 
+	@patch.object(N8nClient, "move_workflow")
+	def test_move_workflow_same_destination_idempotent(self, mock_move):
+		pb = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": "Test Move WF Same Dest PB",
+			"document_type": "ToDo",
+			"provider": "n8n",
+			"n8n_workflow_id": "wf-move-123"
+		}).insert(ignore_permissions=True)
+
+		settings = frappe.get_single("n8n Settings")
+		settings.db_set("enabled", 1)
+		settings.db_set("status", "Authorized")
+		settings.db_set("base_url", "https://n8n.example.com")
+		settings.db_set("api_key", "test_key")
+
+		# Simulating that move_workflow returns cleanly without raising exception
+		move_workflow(pb.name, "proj-destination-123")
+		mock_move.assert_called_once_with("wf-move-123", "proj-destination-123")
+
 	@patch.object(N8nClient, "get_workflow", side_effect=N8nNotFoundError("Not found", status_code=404))
 	@patch("frappe_n8n.integrations.n8n.create_workflow")
 	def test_retrieve_workflow_404_reprovisions(self, mock_create, mock_get_wf):
@@ -233,6 +253,38 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 			execution_name="test-exec-name",
 			webhook_security="sec_123"
 		)
+		self.assertEqual(res["status"], "success")
+
+	@patch("frappe_n8n.integrations.n8n.create_workflow")
+	@patch.object(N8nClient, "trigger_test_execution")
+	@patch("frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.update_a_playbook")
+	def test_trigger_test_execution_provisions_workflow_if_missing(self, mock_sync, mock_client_trigger, mock_create_wf):
+		mock_res = MagicMock()
+		mock_res.status_code = 200
+		mock_client_trigger.return_value = mock_res
+
+		def mock_create_impl(playbook_name):
+			p = frappe.get_doc("Playbook", playbook_name)
+			p.db_set("n8n_workflow_id", "wf-newly-created")
+
+		mock_create_wf.side_effect = mock_create_impl
+
+		settings = frappe.get_single("n8n Settings")
+		settings.db_set("enabled", 1)
+		settings.db_set("status", "Authorized")
+		settings.db_set("base_url", "https://n8n.example.com")
+		settings.db_set("api_key", "test_key")
+
+		pb = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": "Test Provision Unset WF PB",
+			"document_type": "ToDo",
+			"provider": "n8n",
+			"nodes": [{"node_name": "Webhook", "node_type": "n8n-nodes-base.webhook", "n8n_webhook_id": "wh-auto-123"}]
+		}).insert(ignore_permissions=True)
+
+		res = trigger_test_execution(pb.name, {"key": "val"}, "test-exec-name")
+		mock_create_wf.assert_called_once_with(pb.name)
 		self.assertEqual(res["status"], "success")
 
 	@patch("frappe_controller.utils.controller.wait_for_event")
