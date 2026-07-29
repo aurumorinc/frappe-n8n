@@ -3,6 +3,7 @@
 
 import json
 import frappe
+from frappe_controller.utils.controller import wait_for_event
 from frappe_n8n.integrations.n8n import (
 	trigger_execution as integration_trigger_execution,
 	stop_execution as integration_stop_execution,
@@ -11,26 +12,21 @@ from frappe_n8n.integrations.n8n import (
 )
 
 
-def after_insert(doc, method=None):
-	if doc.status == "queued":
-		playbook = frappe.db.get_value("Playbook", doc.playbook, "provider")
-		if playbook == "n8n":
-			frappe.enqueue(
-				"frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.trigger_execution",
-				execution_name=doc.name,
-				queue="high"
-			)
-
-
 def trigger_execution(execution_name):
 	doc = frappe.get_doc("Playbook Execution", execution_name)
 	if doc.status != "queued":
 		return
 
+	playbook_doc = frappe.get_doc("Playbook", doc.playbook)
+	if not playbook_doc.enabled:
+		if getattr(frappe.flags, "current_job_id", None):
+			wait_for_event(f"doc:Playbook:{doc.playbook}:enabled")
+			playbook_doc.reload()
+		if not playbook_doc.enabled:
+			return
+
 	payload = json.loads(doc.execution_data) if doc.execution_data else {}
 	try:
-		doc.status = "running"
-		doc.save(ignore_permissions=True)
 		integration_trigger_execution(
 			playbook_name=doc.playbook,
 			payload=payload,
@@ -38,7 +34,7 @@ def trigger_execution(execution_name):
 		)
 	except Exception as e:
 		frappe.log_error(f"Failed to trigger n8n execution: {e}", "n8n Execution Error")
-		doc.status = "error"
+		doc.status = "failed"
 		doc.save(ignore_permissions=True)
 		raise
 
