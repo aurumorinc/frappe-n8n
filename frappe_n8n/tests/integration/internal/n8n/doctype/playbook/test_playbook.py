@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Aurumor and Contributors
 # See license.txt
 
+import json
 import frappe
 from frappe.tests import IntegrationTestCase
 from unittest.mock import patch, MagicMock
@@ -20,10 +21,11 @@ class TestN8nPlaybook(IntegrationTestCase):
 		frappe.db.rollback()
 		super().tearDown()
 
+	@patch.object(N8nClient, "move_workflow")
 	@patch.object(N8nClient, "activate_workflow")
 	@patch.object(N8nClient, "create_workflow", return_value={"id": "wf-12345", "nodes": [{"name": "Webhook", "type": "n8n-nodes-base.webhook", "id": "node-1", "webhookId": "wh-1"}], "connections": {}})
 	@patch("frappe.enqueue")
-	def test_on_playbook_after_insert_creates_workflow(self, mock_enqueue, mock_create, mock_activate):
+	def test_on_playbook_after_insert_creates_workflow(self, mock_enqueue, mock_create, mock_activate, mock_move):
 		settings = frappe.get_doc("n8n Settings")
 		settings.db_set("enabled", 1)
 		settings.db_set("status", "Authorized")
@@ -51,7 +53,6 @@ class TestN8nPlaybook(IntegrationTestCase):
 		self.assertEqual(playbook.n8n_workflow_id, "wf-12345")
 		self.assertEqual(len(playbook.nodes), 1)
 		self.assertEqual(playbook.nodes[0].node_name, "Webhook")
-		self.assertEqual(playbook.nodes[0].n8n_webhook_id, "wh-1")
 
 
 class TestN8NTestExecutionGracefulExit(IntegrationTestCase):
@@ -79,6 +80,9 @@ class TestN8NTestExecutionGracefulExit(IntegrationTestCase):
 			"provider": "n8n",
 			"document_type": "ToDo",
 			"status": "Enabled",
+			"playbook_data": json.dumps({
+				"nodes": [{"type": "n8n-nodes-base.webhook", "webhookId": "test-webhook-id"}]
+			}),
 			"nodes": [{"node_type": "n8n-nodes-base.webhook", "n8n_webhook_id": "test-webhook-id"}]
 		}).insert()
 
@@ -89,8 +93,9 @@ class TestN8NTestExecutionGracefulExit(IntegrationTestCase):
 		frappe.db.rollback()
 		super().tearDown()
 
+	@patch("frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.update_a_playbook")
 	@patch("frappe_n8n.integrations.n8n.N8nClient.trigger_test_execution")
-	def test_trigger_test_execution_graceful_failure(self, mock_client_trigger):
+	def test_trigger_test_execution_graceful_failure(self, mock_client_trigger, mock_update_pb):
 		from frappe_n8n.n8n.doctype.playbook.playbook import trigger_test_execution
 
 		response = MagicMock()

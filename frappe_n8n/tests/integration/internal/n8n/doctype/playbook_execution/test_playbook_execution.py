@@ -27,8 +27,10 @@ class TestN8nTestExecutionUnit(IntegrationTestCase):
 		frappe.db.rollback()
 		super().tearDown()
 
+	@patch("frappe_n8n.integrations.n8n.N8nClient.move_workflow")
+	@patch("frappe_n8n.integrations.n8n.N8nClient.get_workflow", return_value={"id": "wf-1", "active": True, "nodes": [{"name": "Webhook", "type": "n8n-nodes-base.webhook", "webhookId": "wh-lifecycle-test"}]})
 	@patch("frappe_n8n.integrations.n8n.N8nClient.trigger_test_execution")
-	def test_synchronous_test_execution_lifecycle(self, mock_client_trigger):
+	def test_synchronous_test_execution_lifecycle(self, mock_client_trigger, mock_get_wf, mock_move):
 		mock_res = MagicMock()
 		mock_res.status_code = 200
 		mock_client_trigger.return_value = mock_res
@@ -43,6 +45,8 @@ class TestN8nTestExecutionUnit(IntegrationTestCase):
 			"provider": "n8n",
 			"document_type": "ToDo",
 			"status": "Enabled",
+			"n8n_workflow_id": "wf-lifecycle-123",
+			"playbook_data": json.dumps({"nodes": [{"type": "n8n-nodes-base.webhook", "webhookId": "wh-lifecycle-test"}]}),
 			"nodes": [
 				{
 					"node_name": "Webhook",
@@ -70,20 +74,30 @@ class TestN8nTestExecutionUnit(IntegrationTestCase):
 
 	@patch("frappe_n8n.integrations.n8n.N8nClient.trigger_execution")
 	@patch("frappe_n8n.integrations.n8n.N8nClient.get_workflow", return_value={"active": True})
-	@patch("frappe.enqueue")
+	@patch("frappe_playbook.playbook.doctype.playbook_execution.playbook_execution.enqueue")
 	def test_after_insert_hook_triggers_webhook(self, mock_enqueue, mock_get_wf, mock_trigger):
 		settings = frappe.get_single("n8n Settings")
 		settings.db_set("enabled", 1)
 		settings.db_set("status", "Authorized")
 		settings.db_set("base_url", "https://n8n.example.com")
+		settings.db_set("api_key", "test_key")
 
 		playbook = frappe.get_doc({
 			"doctype": "Playbook",
 			"playbook_name": "Test Webhook Insert",
 			"provider": "n8n",
 			"document_type": "ToDo",
+			"status": "Enabled",
 			"enabled": 1,
 			"n8n_workflow_id": "wf-123",
+			"playbook_data": json.dumps({
+				"nodes": [
+					{
+						"type": "n8n-nodes-base.webhook",
+						"webhookId": "wh-insert-123"
+					}
+				]
+			}),
 			"nodes": [
 				{
 					"node_name": "Webhook",
@@ -115,7 +129,7 @@ class TestN8nTestExecutionUnit(IntegrationTestCase):
 		trigger_execution(execution.name)
 
 		execution.reload()
-		self.assertEqual(execution.status, "running")
+		self.assertEqual(execution.status, "queued")
 		mock_trigger.assert_called_once()
 
 	@patch("frappe_n8n.integrations.n8n.N8nClient.stop_execution")

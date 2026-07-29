@@ -31,8 +31,11 @@ def _apply_payload_to_execution_doc(doc, payload: dict) -> None:
 def callback(execution_name=None, **kwargs):
 	payload = frappe.request.json if getattr(frappe, "request", None) and frappe.request.json else kwargs
 
+	if not execution_name and getattr(frappe, "request", None) and getattr(frappe.request, "headers", None):
+		execution_name = frappe.request.headers.get("frappe-id")
+
 	if not execution_name:
-		execution_name = payload.get("name") or payload.get("execution_name") or frappe.form_dict.get("execution_name")
+		execution_name = payload.get("frappe-id") or frappe.form_dict.get("frappe-id")
 
 	if not execution_name:
 		execution_name = frappe.generate_hash(length=10)

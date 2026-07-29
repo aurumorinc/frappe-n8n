@@ -45,7 +45,6 @@ doc_events = {
         "on_trash": "frappe_n8n.n8n.doctype.playbook.playbook.on_trash"
     },
     "Playbook Execution": {
-        "after_insert": "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.after_insert",
         "on_update": "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.on_update"
     },
     "ToDo": {

@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Aurumor and Contributors
 # See license.txt
 
+import json
 import frappe
 from frappe.tests import IntegrationTestCase
 from unittest.mock import patch, MagicMock
@@ -29,6 +30,11 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 	def tearDownClass(cls):
 		frappe.db.rollback()
 		super().tearDownClass()
+
+	def setUp(self):
+		super().setUp()
+		settings = frappe.get_single("n8n Settings")
+		settings.db_set("project_id", "")
 
 	def tearDown(self):
 		frappe.db.rollback()
@@ -107,9 +113,10 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 		self.assertNotEqual(settings.webhook_security, "old_sec")
 		mock_update.assert_called_once()
 
+	@patch.object(N8nClient, "move_workflow")
 	@patch("frappe_controller.utils.controller.emit_event")
 	@patch.object(N8nClient, "create_workflow", return_value={"id": "wf-new-777", "nodes": [], "connections": {}})
-	def test_create_workflow_populates_db_and_emits_event(self, mock_create, mock_emit):
+	def test_create_workflow_populates_db_and_emits_event(self, mock_create, mock_emit, mock_move):
 		pb = frappe.get_doc({
 			"doctype": "Playbook",
 			"playbook_name": "Test Create WF PB",
@@ -222,9 +229,10 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 		self.assertEqual(res["status"], "failed")
 		self.assertEqual(res["title"], "n8n Unauthorized")
 
+	@patch.object(N8nClient, "move_workflow")
 	@patch.object(N8nClient, "trigger_test_execution")
 	@patch("frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.update_a_playbook")
-	def test_trigger_test_execution_syncs_workflow_first(self, mock_sync_playbook, mock_client_trigger):
+	def test_trigger_test_execution_syncs_workflow_first(self, mock_sync_playbook, mock_client_trigger, mock_move):
 		mock_res = MagicMock()
 		mock_res.status_code = 200
 		mock_client_trigger.return_value = mock_res
@@ -242,6 +250,7 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 			"document_type": "ToDo",
 			"provider": "n8n",
 			"n8n_workflow_id": "wf-sync-1",
+			"playbook_data": json.dumps({"nodes": [{"type": "n8n-nodes-base.webhook", "webhookId": "wh-sync-test"}]}),
 			"nodes": [{"node_name": "Webhook", "node_type": "n8n-nodes-base.webhook", "n8n_webhook_id": "wh-sync-test"}]
 		}).insert(ignore_permissions=True)
 
@@ -255,10 +264,11 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 		)
 		self.assertEqual(res["status"], "success")
 
+	@patch.object(N8nClient, "move_workflow")
 	@patch("frappe_n8n.integrations.n8n.create_workflow")
 	@patch.object(N8nClient, "trigger_test_execution")
 	@patch("frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.update_a_playbook")
-	def test_trigger_test_execution_provisions_workflow_if_missing(self, mock_sync, mock_client_trigger, mock_create_wf):
+	def test_trigger_test_execution_provisions_workflow_if_missing(self, mock_sync, mock_client_trigger, mock_create_wf, mock_move):
 		mock_res = MagicMock()
 		mock_res.status_code = 200
 		mock_client_trigger.return_value = mock_res
@@ -280,6 +290,7 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 			"playbook_name": "Test Provision Unset WF PB",
 			"document_type": "ToDo",
 			"provider": "n8n",
+			"playbook_data": json.dumps({"nodes": [{"type": "n8n-nodes-base.webhook", "webhookId": "wh-auto-123"}]}),
 			"nodes": [{"node_name": "Webhook", "node_type": "n8n-nodes-base.webhook", "n8n_webhook_id": "wh-auto-123"}]
 		}).insert(ignore_permissions=True)
 
@@ -327,8 +338,10 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 			"playbook_name": "Test Exec Active Sync PB",
 			"document_type": "ToDo",
 			"provider": "n8n",
+			"status": "Disabled",
 			"enabled": 0,
 			"n8n_workflow_id": "wf-active-123",
+			"playbook_data": json.dumps({"nodes": [{"type": "n8n-nodes-base.webhook", "webhookId": "wh-active"}]}),
 			"nodes": [{"node_name": "Webhook", "node_type": "n8n-nodes-base.webhook", "n8n_webhook_id": "wh-active"}]
 		}).insert(ignore_permissions=True)
 
