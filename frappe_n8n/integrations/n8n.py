@@ -195,7 +195,7 @@ class N8nClient:
 		if webhook_security:
 			headers["Authorization"] = f"Bearer {webhook_security}"
 		if execution_name:
-			headers["playbook-execution-name"] = execution_name
+			headers["frappe-id"] = execution_name
 		url = f"{self.base_url}/webhook/{webhook_id}"
 		return requests.post(url, json=payload, headers=headers, timeout=10)
 
@@ -204,7 +204,7 @@ class N8nClient:
 		if webhook_security:
 			headers["Authorization"] = f"Bearer {webhook_security}"
 		if execution_name:
-			headers["playbook-execution-name"] = execution_name
+			headers["frappe-id"] = execution_name
 		url = f"{self.base_url}/webhook-test/{webhook_id}"
 		return requests.post(url, json=payload, headers=headers, timeout=10)
 
@@ -550,6 +550,7 @@ def trigger_execution(playbook_name: str, payload: dict, execution_name: str, we
 			wf_active = wf.get("active", False)
 			if wf_active and not playbook_doc.enabled:
 				playbook_doc.db_set("enabled", 1)
+				playbook_doc.enabled = 1
 				controller.emit_event(key=f"doc:Playbook:{playbook_name}:enabled", argument={"status": "enabled"})
 			elif not wf_active and playbook_doc.enabled:
 				client.activate_workflow(playbook_doc.n8n_workflow_id)
