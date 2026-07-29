@@ -237,6 +237,11 @@ class TestN8nClient(UnitTestCase):
 		mock_post.return_value = mock_res
 		res = self.client.trigger_execution("hook-1", {"a": 1}, "exec-1", webhook_security="sec")
 		self.assertEqual(res.status_code, 200)
+		headers = mock_post.call_args.kwargs["headers"]
+		self.assertEqual(headers.get("frappe-id"), "exec-1")
+		self.assertNotIn("n8n-execution-name", headers)
+		self.assertNotIn("execution-name", headers)
+		self.assertNotIn("playbook-execution-name", headers)
 
 	@patch("requests.post")
 	def test_n8n_client_trigger_test_execution(self, mock_post):
@@ -245,6 +250,11 @@ class TestN8nClient(UnitTestCase):
 		mock_post.return_value = mock_res
 		res = self.client.trigger_test_execution("hook-1", {"a": 1}, "test-exec-1", webhook_security="sec")
 		self.assertEqual(res.status_code, 200)
+		headers = mock_post.call_args.kwargs["headers"]
+		self.assertEqual(headers.get("frappe-id"), "test-exec-1")
+		self.assertNotIn("n8n-execution-name", headers)
+		self.assertNotIn("execution-name", headers)
+		self.assertNotIn("playbook-execution-name", headers)
 
 	@patch("frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.retrieve_workflow")
 	@patch("frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.frappe")
