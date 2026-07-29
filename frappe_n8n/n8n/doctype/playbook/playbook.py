@@ -24,7 +24,7 @@ def get_builder_url(playbook_name):
 def trigger_test_execution(playbook_name):
 	playbook_doc = frappe.get_doc("Playbook", playbook_name)
 
-	waiting_exec = frappe.get_all(
+	exec_docs = frappe.get_all(
 		"Playbook Execution",
 		filters={"playbook": playbook_name, "status": "waiting"},
 		fields=["name", "reference_doctype", "reference_name"],
@@ -32,10 +32,19 @@ def trigger_test_execution(playbook_name):
 		limit=1
 	)
 
+	if not exec_docs:
+		exec_docs = frappe.get_all(
+			"Playbook Execution",
+			filters={"playbook": playbook_name},
+			fields=["name", "reference_doctype", "reference_name"],
+			order_by="creation desc",
+			limit=1
+		)
+
 	target_doc = None
-	if waiting_exec:
-		target_doc = frappe.get_doc(waiting_exec[0].reference_doctype, waiting_exec[0].reference_name)
-		execution_name = f"test-{waiting_exec[0].name}"
+	if exec_docs:
+		target_doc = frappe.get_doc(exec_docs[0].reference_doctype, exec_docs[0].reference_name)
+		execution_name = f"test-{exec_docs[0].name}"
 	else:
 		execution_name = f"test-{playbook_doc.name}"
 		recent_docs = frappe.get_all(
