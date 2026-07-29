@@ -38,6 +38,9 @@ def callback(execution_name=None, **kwargs):
 		execution_name = payload.get("frappe-id") or frappe.form_dict.get("frappe-id")
 
 	if not execution_name:
+		execution_name = payload.get("name") or frappe.form_dict.get("name")
+
+	if not execution_name:
 		execution_name = frappe.generate_hash(length=10)
 
 	is_test = str(execution_name).startswith("test-")
