@@ -27,7 +27,7 @@ def trigger_test_execution(playbook_name):
 	waiting_exec = frappe.get_all(
 		"Playbook Execution",
 		filters={"playbook": playbook_name, "status": "waiting"},
-		fields=["reference_doctype", "reference_name"],
+		fields=["name", "reference_doctype", "reference_name"],
 		order_by="creation desc",
 		limit=1
 	)
@@ -35,7 +35,9 @@ def trigger_test_execution(playbook_name):
 	target_doc = None
 	if waiting_exec:
 		target_doc = frappe.get_doc(waiting_exec[0].reference_doctype, waiting_exec[0].reference_name)
+		execution_name = f"test-{waiting_exec[0].name}"
 	else:
+		execution_name = f"test-{playbook_doc.name}"
 		recent_docs = frappe.get_all(
 			playbook_doc.document_type,
 			order_by="creation desc",
@@ -51,7 +53,6 @@ def trigger_test_execution(playbook_name):
 		return {"status": "failed", "title": "No Document Found", "message": "No matching document found."}
 
 	payload = target_doc.as_dict(convert_dates_to_str=True)
-	execution_name = f"test-{playbook_doc.name}-{frappe.generate_hash(length=10)}"
 
 	return integration_trigger_test_execution(
 		playbook_name=playbook_doc.name,
