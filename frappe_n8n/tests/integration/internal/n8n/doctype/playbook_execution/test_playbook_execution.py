@@ -203,3 +203,81 @@ class TestN8nTestExecutionUnit(IntegrationTestCase):
 		execution.reload()
 		self.assertEqual(execution.status, "running")
 
+	def test_callback_test_execution_existing_execution_minimal(self):
+		playbook = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": f"PB-Minimal-{frappe.generate_hash(length=6)}",
+			"provider": "n8n",
+			"document_type": "ToDo",
+			"status": "Enabled"
+		}).insert(ignore_permissions=True)
+
+		real_exec_name = f"EXEC-{frappe.generate_hash(length=8)}"
+		execution = frappe.get_doc({
+			"doctype": "Playbook Execution",
+			"name": real_exec_name,
+			"playbook": playbook.name,
+			"status": "queued"
+		}).insert(ignore_permissions=True, ignore_links=True)
+
+		from frappe_n8n.playbook_execution import callback
+		test_name = f"test-{real_exec_name}"
+		res = callback(name=test_name, status="running")
+
+		self.assertEqual(res.get("name"), test_name)
+		self.assertEqual(res.get("status"), "running")
+		self.assertEqual(res.get("playbook"), playbook.name)
+
+		execution.reload()
+		self.assertEqual(execution.status, "queued")
+
+	def test_callback_test_execution_existing_playbook_minimal(self):
+		playbook = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": f"PB-Direct-{frappe.generate_hash(length=6)}",
+			"provider": "n8n",
+			"document_type": "ToDo",
+			"status": "Enabled"
+		}).insert(ignore_permissions=True)
+
+		test_name = f"test-{playbook.name}"
+		from frappe_n8n.playbook_execution import callback
+		res = callback(name=test_name, status="running")
+
+		self.assertEqual(res.get("name"), test_name)
+		self.assertEqual(res.get("status"), "running")
+		self.assertEqual(res.get("playbook"), playbook.name)
+		self.assertFalse(frappe.db.exists("Playbook Execution", test_name))
+
+	def test_callback_test_execution_nonexistent_playbook_throws(self):
+		from frappe_n8n.playbook_execution import callback
+		with self.assertRaises(frappe.ValidationError):
+			callback(name="test-NONEXISTENT-9999", status="running")
+
+	def test_callback_production_execution_updates_db(self):
+		playbook = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": f"PB-Prod-{frappe.generate_hash(length=6)}",
+			"provider": "n8n",
+			"document_type": "ToDo",
+			"status": "Enabled"
+		}).insert(ignore_permissions=True)
+
+		real_exec_name = f"EXEC-PROD-{frappe.generate_hash(length=8)}"
+		execution = frappe.get_doc({
+			"doctype": "Playbook Execution",
+			"name": real_exec_name,
+			"playbook": playbook.name,
+			"status": "queued"
+		}).insert(ignore_permissions=True, ignore_links=True)
+
+		from frappe_n8n.playbook_execution import callback
+		res = callback(name=real_exec_name, status="running")
+
+		self.assertEqual(res.get("name"), real_exec_name)
+		self.assertEqual(res.get("status"), "running")
+
+		execution.reload()
+		self.assertEqual(execution.status, "running")
+
+
