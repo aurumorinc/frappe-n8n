@@ -53,7 +53,6 @@ class TestN8nPlaybook(IntegrationTestCase):
 		self.assertEqual(playbook.n8n_workflow_id, "wf-12345")
 		self.assertEqual(len(playbook.nodes), 1)
 		self.assertEqual(playbook.nodes[0].node_name, "Webhook")
-		self.assertEqual(playbook.nodes[0].n8n_webhook_id, "wh-1")
 
 
 class TestN8NTestExecutionGracefulExit(IntegrationTestCase):

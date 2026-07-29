@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Aurumor and Contributors
 # See license.txt
 
+import json
 import frappe
 from frappe.tests import IntegrationTestCase
 from unittest.mock import patch, MagicMock
@@ -29,6 +30,11 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 	def tearDownClass(cls):
 		frappe.db.rollback()
 		super().tearDownClass()
+
+	def setUp(self):
+		super().setUp()
+		settings = frappe.get_single("n8n Settings")
+		settings.db_set("project_id", "")
 
 	def tearDown(self):
 		frappe.db.rollback()
@@ -244,6 +250,7 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 			"document_type": "ToDo",
 			"provider": "n8n",
 			"n8n_workflow_id": "wf-sync-1",
+			"playbook_data": json.dumps({"nodes": [{"type": "n8n-nodes-base.webhook", "webhookId": "wh-sync-test"}]}),
 			"nodes": [{"node_name": "Webhook", "node_type": "n8n-nodes-base.webhook", "n8n_webhook_id": "wh-sync-test"}]
 		}).insert(ignore_permissions=True)
 
@@ -283,6 +290,7 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 			"playbook_name": "Test Provision Unset WF PB",
 			"document_type": "ToDo",
 			"provider": "n8n",
+			"playbook_data": json.dumps({"nodes": [{"type": "n8n-nodes-base.webhook", "webhookId": "wh-auto-123"}]}),
 			"nodes": [{"node_name": "Webhook", "node_type": "n8n-nodes-base.webhook", "n8n_webhook_id": "wh-auto-123"}]
 		}).insert(ignore_permissions=True)
 
@@ -330,8 +338,10 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 			"playbook_name": "Test Exec Active Sync PB",
 			"document_type": "ToDo",
 			"provider": "n8n",
+			"status": "Disabled",
 			"enabled": 0,
 			"n8n_workflow_id": "wf-active-123",
+			"playbook_data": json.dumps({"nodes": [{"type": "n8n-nodes-base.webhook", "webhookId": "wh-active"}]}),
 			"nodes": [{"node_name": "Webhook", "node_type": "n8n-nodes-base.webhook", "n8n_webhook_id": "wh-active"}]
 		}).insert(ignore_permissions=True)
 

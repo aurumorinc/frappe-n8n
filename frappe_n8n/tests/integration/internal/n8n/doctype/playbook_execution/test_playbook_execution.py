@@ -27,8 +27,10 @@ class TestN8nTestExecutionUnit(IntegrationTestCase):
 		frappe.db.rollback()
 		super().tearDown()
 
+	@patch("frappe_n8n.integrations.n8n.N8nClient.move_workflow")
+	@patch("frappe_n8n.integrations.n8n.N8nClient.get_workflow", return_value={"id": "wf-1", "active": True, "nodes": [{"name": "Webhook", "type": "n8n-nodes-base.webhook", "webhookId": "wh-lifecycle-test"}]})
 	@patch("frappe_n8n.integrations.n8n.N8nClient.trigger_test_execution")
-	def test_synchronous_test_execution_lifecycle(self, mock_client_trigger):
+	def test_synchronous_test_execution_lifecycle(self, mock_client_trigger, mock_get_wf, mock_move):
 		mock_res = MagicMock()
 		mock_res.status_code = 200
 		mock_client_trigger.return_value = mock_res
@@ -43,6 +45,8 @@ class TestN8nTestExecutionUnit(IntegrationTestCase):
 			"provider": "n8n",
 			"document_type": "ToDo",
 			"status": "Enabled",
+			"n8n_workflow_id": "wf-lifecycle-123",
+			"playbook_data": json.dumps({"nodes": [{"type": "n8n-nodes-base.webhook", "webhookId": "wh-lifecycle-test"}]}),
 			"nodes": [
 				{
 					"node_name": "Webhook",
