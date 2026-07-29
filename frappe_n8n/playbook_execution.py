@@ -46,16 +46,26 @@ def callback(execution_name=None, **kwargs):
 	is_test = str(execution_name).startswith("test-")
 
 	if is_test:
-		playbook_name = payload.get("playbook")
+		raw_name = str(execution_name).removeprefix("test-")
+		doc_data = None
 
-		doc_data = {
-			"doctype": "Playbook Execution",
-			"name": execution_name,
-			"playbook": playbook_name,
-			"reference_doctype": payload.get("reference_doctype"),
-			"reference_name": payload.get("reference_name"),
-			"status": payload.get("status", "running"),
-		}
+		if frappe.db.exists("Playbook Execution", raw_name):
+			real_doc = frappe.get_doc("Playbook Execution", raw_name)
+			doc_data = real_doc.as_dict()
+			doc_data["name"] = execution_name
+		else:
+			playbook_name = raw_name if frappe.db.exists("Playbook", raw_name) else payload.get("playbook")
+			if not playbook_name or not frappe.db.exists("Playbook", playbook_name):
+				frappe.throw("Playbook not found.")
+
+			doc_data = {
+				"doctype": "Playbook Execution",
+				"name": execution_name,
+				"playbook": playbook_name,
+				"reference_doctype": payload.get("reference_doctype"),
+				"reference_name": payload.get("reference_name"),
+				"status": payload.get("status", "running"),
+			}
 
 		doc = frappe.get_doc(doc_data)
 		_apply_payload_to_execution_doc(doc, payload)
