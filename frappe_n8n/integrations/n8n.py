@@ -195,7 +195,7 @@ class N8nClient:
 		if webhook_security:
 			headers["Authorization"] = f"Bearer {webhook_security}"
 		if execution_name:
-			headers["n8n-execution-name"] = execution_name
+			headers["playbook-execution-name"] = execution_name
 		url = f"{self.base_url}/webhook/{webhook_id}"
 		return requests.post(url, json=payload, headers=headers, timeout=10)
 
@@ -204,7 +204,7 @@ class N8nClient:
 		if webhook_security:
 			headers["Authorization"] = f"Bearer {webhook_security}"
 		if execution_name:
-			headers["n8n-execution-name"] = execution_name
+			headers["playbook-execution-name"] = execution_name
 		url = f"{self.base_url}/webhook-test/{webhook_id}"
 		return requests.post(url, json=payload, headers=headers, timeout=10)
 
