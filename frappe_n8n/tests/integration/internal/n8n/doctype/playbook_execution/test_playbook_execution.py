@@ -173,3 +173,33 @@ class TestN8nTestExecutionUnit(IntegrationTestCase):
 		from frappe_n8n.n8n.doctype.playbook_execution.playbook_execution import stop_execution
 		stop_execution("exec-123")
 		mock_stop.assert_called_once_with("exec-123")
+
+	def test_callback_accepts_name_in_payload(self):
+		playbook = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": "Test Callback Name Payload",
+			"provider": "n8n",
+			"document_type": "ToDo",
+			"status": "Enabled"
+		}).insert(ignore_permissions=True)
+
+		todo = frappe.get_doc({"doctype": "ToDo", "description": "test"}).insert()
+
+		execution = frappe.get_doc({
+			"doctype": "Playbook Execution",
+			"name": f"exec-{frappe.generate_hash(length=8)}",
+			"playbook": playbook.name,
+			"reference_doctype": "ToDo",
+			"reference_name": todo.name,
+			"status": "queued"
+		}).insert(ignore_permissions=True, ignore_links=True)
+
+		from frappe_n8n.playbook_execution import callback
+		res = callback(name=execution.name, status="running")
+
+		self.assertEqual(res.get("name"), execution.name)
+		self.assertEqual(res.get("status"), "running")
+
+		execution.reload()
+		self.assertEqual(execution.status, "running")
+
