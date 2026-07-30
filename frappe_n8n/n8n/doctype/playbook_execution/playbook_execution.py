@@ -17,14 +17,6 @@ def trigger_execution(execution_name):
 	if doc.status != "queued":
 		return
 
-	playbook_doc = frappe.get_doc("Playbook", doc.playbook)
-	if not playbook_doc.enabled:
-		if getattr(frappe.flags, "current_job_id", None):
-			wait_for_event(f"doc:Playbook:{doc.playbook}:enabled")
-			playbook_doc.reload()
-		if not playbook_doc.enabled:
-			return
-
 	payload = json.loads(doc.execution_data) if doc.execution_data else {}
 	try:
 		integration_trigger_execution(
