@@ -284,4 +284,58 @@ class TestN8nTestExecutionUnit(IntegrationTestCase):
 		method = frappe.override_whitelisted_method("frappe_playbook.playbook.doctype.playbook_execution.playbook_execution.trigger_execution")
 		self.assertEqual(method, "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.trigger_execution")
 
+	def test_whitelisted_method_override_resolves_n8n_replay(self):
+		method = frappe.override_whitelisted_method("frappe_playbook.playbook.doctype.playbook_execution.playbook_execution.replay")
+		self.assertEqual(method, "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.replay")
+
+	@patch("frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.integration_trigger_execution")
+	def test_n8n_replay_resets_status_to_queued(self, mock_trigger):
+		playbook = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": f"PB-Replay-{frappe.generate_hash(length=6)}",
+			"provider": "n8n",
+			"document_type": "ToDo",
+			"status": "Enabled"
+		}).insert(ignore_permissions=True)
+
+		execution = frappe.get_doc({
+			"doctype": "Playbook Execution",
+			"name": f"EXEC-REPLAY-{frappe.generate_hash(length=8)}",
+			"playbook": playbook.name,
+			"status": "failed",
+			"execution_data": json.dumps({"payload_key": "payload_val"})
+		}).insert(ignore_permissions=True, ignore_links=True)
+
+		from frappe_n8n.n8n.doctype.playbook_execution.playbook_execution import replay
+		replay(execution.name)
+
+		execution.reload()
+		self.assertEqual(execution.status, "queued")
+		mock_trigger.assert_called_once_with(
+			playbook_name=playbook.name,
+			payload={"payload_key": "payload_val"},
+			execution_name=execution.name
+		)
+
+	def test_n8n_replay_disallowed_on_active_execution(self):
+		playbook = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": f"PB-Replay-Active-{frappe.generate_hash(length=6)}",
+			"provider": "n8n",
+			"document_type": "ToDo",
+			"status": "Enabled"
+		}).insert(ignore_permissions=True)
+
+		execution = frappe.get_doc({
+			"doctype": "Playbook Execution",
+			"name": f"EXEC-REPLAY-ACT-{frappe.generate_hash(length=8)}",
+			"playbook": playbook.name,
+			"status": "running"
+		}).insert(ignore_permissions=True, ignore_links=True)
+
+		from frappe_n8n.n8n.doctype.playbook_execution.playbook_execution import replay
+		with self.assertRaises(frappe.ValidationError):
+			replay(execution.name)
+
+
 

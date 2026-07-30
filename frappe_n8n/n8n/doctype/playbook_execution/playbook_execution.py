@@ -65,6 +65,11 @@ def get_debug_url(execution_name):
 @frappe.whitelist()
 def replay(execution_name):
 	doc = frappe.get_doc("Playbook Execution", execution_name)
+	if doc.status not in ["success", "failed", "error", "canceled"]:
+		frappe.throw(f"Cannot replay execution in '{doc.status}' status. Replay is only allowed when execution is finished.")
+
+	doc.status = "queued"
+	doc.save(ignore_permissions=True)
 	payload = json.loads(doc.execution_data) if doc.execution_data else {}
 	integration_trigger_execution(
 		playbook_name=doc.playbook,
