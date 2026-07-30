@@ -4,10 +4,12 @@
 import json
 import frappe
 from frappe_controller.utils.background_jobs import enqueue
+from frappe_controller.utils.controller import emit_event
 from frappe_n8n.integrations.n8n import (
 	retrieve_workflow as integration_retrieve_workflow,
 	enable_workflow as integration_enable_workflow,
 	disable_workflow as integration_disable_workflow,
+	extract_webhook_id,
 )
 
 
@@ -73,3 +75,10 @@ def update_a_playbook(playbook_name):
 		playbook_doc.save(ignore_permissions=True)
 	finally:
 		frappe.flags.in_playbook_sync = False
+
+	if playbook_doc.n8n_workflow_id:
+		emit_event(key=f"doc:Playbook:{playbook_doc.name}:n8n_workflow_id", argument={"n8n_workflow_id": playbook_doc.n8n_workflow_id})
+
+	wh_id = extract_webhook_id(playbook_doc)
+	if wh_id:
+		emit_event(key=f"doc:Playbook:{playbook_doc.name}:webhook_id", argument={"webhook_id": wh_id})

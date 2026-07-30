@@ -256,9 +256,10 @@ class TestN8nClient(UnitTestCase):
 		self.assertNotIn("execution-name", headers)
 		self.assertNotIn("playbook-execution-name", headers)
 
+	@patch("frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.emit_event")
 	@patch("frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.retrieve_workflow")
 	@patch("frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.frappe")
-	def test_update_a_playbook_webhook_id_fallback_chain(self, mock_frappe, mock_retrieve):
+	def test_update_a_playbook_webhook_id_fallback_chain(self, mock_frappe, mock_retrieve, mock_emit):
 		from frappe_n8n.n8n.doctype.playbook_provider.playbook_provider import update_a_playbook
 
 		# Case 1: Node with parameters.path fallback
@@ -309,3 +310,70 @@ class TestN8nClient(UnitTestCase):
 		mock_post.return_value = mock_res
 		res = self.client.resume_execution("http://n8n.test/resume/123", {"a": 1}, webhook_security="sec")
 		self.assertEqual(res.status_code, 200)
+
+	@patch("frappe_n8n.integrations.n8n.N8nClient.trigger_execution")
+	@patch("frappe_n8n.integrations.n8n.N8nClient.from_settings")
+	@patch("frappe_n8n.integrations.n8n.controller.wait_for_event")
+	@patch("frappe_n8n.integrations.n8n.frappe")
+	@patch("frappe_n8n.integrations.n8n.get_n8n_config")
+	def test_trigger_execution_waits_for_webhook_id(self, mock_config, mock_frappe, mock_wait, mock_client_cls, mock_trigger):
+		from frappe_n8n.integrations.n8n import trigger_execution
+
+		mock_frappe.flags.current_job_id = "job-unit-wh"
+		mock_config.return_value = {"status": "Authorized", "webhook_security": "sec123"}
+		mock_client = MagicMock()
+		mock_client.get_workflow.return_value = {"active": True}
+		mock_client_cls.return_value = mock_client
+
+		mock_pb = MagicMock()
+		mock_pb.name = "pb-wh-test"
+		mock_pb.n8n_workflow_id = "wf-wh-123"
+		mock_pb.enabled = True
+		mock_pb.get.return_value = []
+		mock_pb.playbook_data = None
+
+		def side_effect_wait(event_key):
+			if event_key == "doc:Playbook:pb-wh-test:webhook_id":
+				node = MagicMock()
+				node.n8n_webhook_id = "wh-populated-after-wait"
+				mock_pb.get.return_value = [node]
+
+		mock_wait.side_effect = side_effect_wait
+		mock_frappe.get_doc.return_value = mock_pb
+
+		trigger_execution("pb-wh-test", {"a": 1}, "exec-wh-1")
+
+		mock_wait.assert_called_with("doc:Playbook:pb-wh-test:webhook_id")
+		mock_client.trigger_execution.assert_called_once_with(
+			webhook_id="wh-populated-after-wait",
+			payload={"a": 1},
+			execution_name="exec-wh-1",
+			webhook_security="sec123",
+		)
+
+	@patch("frappe_n8n.integrations.n8n.controller.wait_for_event")
+	@patch("frappe_n8n.integrations.n8n.frappe")
+	@patch("frappe_n8n.integrations.n8n.get_n8n_config")
+	def test_trigger_execution_raises_when_webhook_id_missing_after_wait(self, mock_config, mock_frappe, mock_wait):
+		from frappe_n8n.integrations.n8n import trigger_execution
+
+		mock_frappe.ValidationError = frappe.ValidationError
+		mock_frappe.flags.current_job_id = "job-unit-missing"
+		mock_config.return_value = {"status": "Authorized", "webhook_security": "sec123"}
+		mock_client = MagicMock()
+		mock_client.get_workflow.return_value = {"active": True}
+
+		mock_pb = MagicMock()
+		mock_pb.name = "pb-no-wh"
+		mock_pb.n8n_workflow_id = "wf-123"
+		mock_pb.enabled = True
+		mock_pb.get.return_value = []
+		mock_pb.playbook_data = None
+		mock_frappe.get_doc.return_value = mock_pb
+
+		with patch("frappe_n8n.integrations.n8n.N8nClient.from_settings", return_value=mock_client):
+			with self.assertRaises(frappe.ValidationError):
+				trigger_execution("pb-no-wh", {"a": 1}, "exec-fail-1")
+
+		mock_wait.assert_called_with("doc:Playbook:pb-no-wh:webhook_id")
+		mock_frappe.log_error.assert_called_with("No webhook ID found for execution after wait", "n8n Execution Error")

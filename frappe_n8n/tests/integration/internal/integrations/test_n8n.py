@@ -298,10 +298,11 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 		mock_create_wf.assert_called_once_with(pb.name)
 		self.assertEqual(res["status"], "success")
 
+	@patch.object(N8nClient, "deactivate_workflow")
 	@patch("frappe_controller.utils.controller.wait_for_event")
 	@patch.object(N8nClient, "trigger_execution")
 	@patch.object(N8nClient, "get_workflow", return_value={"active": False})
-	def test_trigger_execution_waits_for_authorized_and_enabled_events(self, mock_get_wf, mock_trigger, mock_wait):
+	def test_trigger_execution_waits_for_authorized_and_enabled_events(self, mock_get_wf, mock_trigger, mock_wait, mock_deactivate):
 		settings = frappe.get_single("n8n Settings")
 		settings.db_set("enabled", 1)
 		settings.db_set("status", "Unauthorized")
@@ -313,13 +314,72 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 			"provider": "n8n",
 			"enabled": 0,
 			"n8n_workflow_id": "wf-wait-123",
+			"playbook_data": json.dumps({"nodes": [{"type": "n8n-nodes-base.webhook", "webhookId": "wh-wait"}]}),
 			"nodes": [{"node_name": "Webhook", "node_type": "n8n-nodes-base.webhook", "n8n_webhook_id": "wh-wait"}]
 		}).insert(ignore_permissions=True)
+
+		def side_effect_wait(event_key):
+			if event_key == "doc:n8n Settings:authorized":
+				settings.db_set("status", "Authorized")
+			elif event_key == f"doc:Playbook:{pb.name}:enabled":
+				pb.db_set("enabled", 1)
+
+		mock_wait.side_effect = side_effect_wait
 
 		try:
 			frappe.flags.current_job_id = "job-123"
 			trigger_execution(pb.name, {"a": 1}, "exec-wait")
 			mock_wait.assert_any_call("doc:n8n Settings:authorized")
+			mock_wait.assert_any_call(f"doc:Playbook:{pb.name}:enabled")
+		finally:
+			frappe.flags.current_job_id = None
+
+	@patch.object(N8nClient, "deactivate_workflow")
+	@patch("frappe_controller.utils.controller.wait_for_event")
+	@patch.object(N8nClient, "trigger_execution")
+	@patch.object(N8nClient, "get_workflow", return_value={"active": True})
+	def test_trigger_execution_waits_for_webhook_id_when_missing(self, mock_get_wf, mock_trigger, mock_wait, mock_deactivate):
+		settings = frappe.get_single("n8n Settings")
+		settings.db_set("enabled", 1)
+		settings.db_set("status", "Authorized")
+		settings.db_set("base_url", "https://n8n.example.com")
+		settings.db_set("api_key", "test_key")
+
+		pb = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": "Test Exec Wait Webhook PB",
+			"document_type": "ToDo",
+			"provider": "n8n",
+			"enabled": 1,
+			"n8n_workflow_id": "wf-wh-wait-123",
+			"nodes": []
+		}).insert(ignore_permissions=True)
+
+		def side_effect_wait(event_key):
+			if event_key == f"doc:Playbook:{pb.name}:webhook_id":
+				frappe.flags.in_playbook_sync = True
+				try:
+					fresh_pb = frappe.get_doc("Playbook", pb.name)
+					fresh_pb.playbook_data = json.dumps({"nodes": [{"type": "n8n-nodes-base.webhook", "webhookId": "wh-populated-dynamically"}]})
+					fresh_pb.append("nodes", {
+						"node_name": "Webhook",
+						"node_type": "n8n-nodes-base.webhook",
+						"n8n_webhook_id": "wh-populated-dynamically"
+					})
+					fresh_pb.save(ignore_permissions=True)
+				finally:
+					frappe.flags.in_playbook_sync = False
+
+		mock_wait.side_effect = side_effect_wait
+
+		try:
+			frappe.flags.current_job_id = "job-wh-456"
+			trigger_execution(pb.name, {"msg": "hello"}, "exec-wh-wait")
+			mock_wait.assert_called_with(f"doc:Playbook:{pb.name}:webhook_id")
+			mock_trigger.assert_called_once()
+			self.assertEqual(mock_trigger.call_args[1]["webhook_id"], "wh-populated-dynamically")
+			self.assertEqual(mock_trigger.call_args[1]["payload"], {"msg": "hello"})
+			self.assertEqual(mock_trigger.call_args[1]["execution_name"], "exec-wh-wait")
 		finally:
 			frappe.flags.current_job_id = None
 

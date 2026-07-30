@@ -305,6 +305,37 @@ def rotate_credentials():
 	controller.emit_event(key="n8n_credential_ready", argument={"status": "success"})
 
 
+def extract_webhook_id(playbook_doc) -> str | None:
+	webhook_id = None
+	for node in playbook_doc.get("nodes", []):
+		if getattr(node, "n8n_webhook_id", None):
+			webhook_id = node.n8n_webhook_id
+			break
+		elif "webhook" in str(getattr(node, "node_type", "")).lower() and getattr(node, "n8n_node_id", None):
+			webhook_id = node.n8n_node_id
+			break
+
+	if not webhook_id and getattr(playbook_doc, "playbook_data", None):
+		try:
+			pb_data = (
+				json.loads(playbook_doc.playbook_data)
+				if isinstance(playbook_doc.playbook_data, str)
+				else playbook_doc.playbook_data
+			)
+			if isinstance(pb_data, dict):
+				for node in pb_data.get("nodes", []):
+					node_type = str(node.get("type", "")).lower()
+					if "webhook" in node_type or node.get("webhookId"):
+						node_params = node.get("parameters") if isinstance(node.get("parameters"), dict) else {}
+						webhook_id = node.get("webhookId") or node_params.get("path") or node.get("id")
+						if webhook_id:
+							break
+		except Exception:
+			pass
+
+	return webhook_id
+
+
 def create_workflow(playbook_name: str) -> str | None:
 	playbook_doc = frappe.get_doc("Playbook", playbook_name)
 	if playbook_doc.n8n_workflow_id:
@@ -357,6 +388,11 @@ def create_workflow(playbook_name: str) -> str | None:
 
 		playbook_doc.db_set("n8n_workflow_id", workflow_id)
 		controller.emit_event(key="n8n_workflow_created", argument={"playbook_name": playbook_doc.name})
+		controller.emit_event(key=f"doc:Playbook:{playbook_doc.name}:n8n_workflow_id", argument={"n8n_workflow_id": workflow_id})
+
+		webhook_id = extract_webhook_id(playbook_doc)
+		if webhook_id:
+			controller.emit_event(key=f"doc:Playbook:{playbook_doc.name}:webhook_id", argument={"webhook_id": webhook_id})
 
 		if playbook_doc.enabled:
 			enable_workflow(playbook_name)
@@ -466,28 +502,7 @@ def trigger_test_execution(playbook_name: str, payload: dict, execution_name: st
 		move_workflow(playbook_name, config["project_id"])
 		playbook_doc.reload()
 
-	webhook_id = None
-	for node in playbook_doc.get("nodes", []):
-		if getattr(node, "n8n_webhook_id", None):
-			webhook_id = node.n8n_webhook_id
-			break
-		elif "webhook" in str(getattr(node, "node_type", "")).lower() and getattr(node, "n8n_node_id", None):
-			webhook_id = node.n8n_node_id
-			break
-
-	if not webhook_id and getattr(playbook_doc, "playbook_data", None):
-		try:
-			pb_data = json.loads(playbook_doc.playbook_data) if isinstance(playbook_doc.playbook_data, str) else playbook_doc.playbook_data
-			if isinstance(pb_data, dict):
-				for node in pb_data.get("nodes", []):
-					node_type = str(node.get("type", "")).lower()
-					if "webhook" in node_type or node.get("webhookId"):
-						node_params = node.get("parameters") if isinstance(node.get("parameters"), dict) else {}
-						webhook_id = node.get("webhookId") or node_params.get("path") or node.get("id")
-						if webhook_id:
-							break
-		except Exception:
-			pass
+	webhook_id = extract_webhook_id(playbook_doc)
 
 	if not webhook_id:
 		return {
@@ -537,61 +552,60 @@ def trigger_execution(playbook_name: str, payload: dict, execution_name: str, we
 			controller.wait_for_event("doc:n8n Settings:authorized")
 			config = get_n8n_config()
 		if config["status"] != "Authorized":
-			return
+			frappe.log_error("n8n Settings unauthorized for execution", "n8n Execution Error")
+			raise frappe.ValidationError("n8n Settings unauthorized")
 
 	client = N8nClient.from_settings(wait_if_unauthorized=True)
 	if not client:
-		return
+		frappe.log_error("Unable to initialize n8n client", "n8n Execution Error")
+		raise frappe.ValidationError("n8n Client initialization failed")
 
 	playbook_doc = frappe.get_doc("Playbook", playbook_name)
-	if playbook_doc.n8n_workflow_id:
-		try:
-			wf = client.get_workflow(playbook_doc.n8n_workflow_id)
-			wf_active = wf.get("active", False)
-			if wf_active and not playbook_doc.enabled:
-				playbook_doc.db_set("enabled", 1)
-				playbook_doc.enabled = 1
-				controller.emit_event(key=f"doc:Playbook:{playbook_name}:enabled", argument={"status": "enabled"})
-			elif not wf_active and playbook_doc.enabled:
-				client.activate_workflow(playbook_doc.n8n_workflow_id)
-		except N8nNotFoundError:
-			playbook_doc.db_set("n8n_workflow_id", None)
+
+	if not playbook_doc.n8n_workflow_id:
+		if playbook_doc.provider == "n8n":
 			create_workflow(playbook_name)
 			playbook_doc.reload()
+		if not playbook_doc.n8n_workflow_id and getattr(frappe.flags, "current_job_id", None):
+			controller.wait_for_event(f"doc:Playbook:{playbook_name}:n8n_workflow_id")
+			playbook_doc.reload()
+		if not playbook_doc.n8n_workflow_id:
+			frappe.log_error("No workflow ID found for execution after wait", "n8n Execution Error")
+			raise frappe.ValidationError("No workflow ID found for playbook execution")
+
+	try:
+		wf = client.get_workflow(playbook_doc.n8n_workflow_id)
+		wf_active = wf.get("active", False)
+		if wf_active and not playbook_doc.enabled:
+			playbook_doc.db_set("enabled", 1)
+			playbook_doc.enabled = 1
+			controller.emit_event(key=f"doc:Playbook:{playbook_name}:enabled", argument={"status": "enabled"})
+		elif not wf_active and playbook_doc.enabled:
+			client.activate_workflow(playbook_doc.n8n_workflow_id)
+	except N8nNotFoundError:
+		playbook_doc.db_set("n8n_workflow_id", None)
+		create_workflow(playbook_name)
+		playbook_doc.reload()
 
 	if not playbook_doc.enabled:
 		if getattr(frappe.flags, "current_job_id", None):
 			controller.wait_for_event(f"doc:Playbook:{playbook_name}:enabled")
 			playbook_doc.reload()
 		if not playbook_doc.enabled:
-			return
+			frappe.log_error("Playbook is disabled for execution after wait", "n8n Execution Error")
+			raise frappe.ValidationError("Playbook is disabled")
 
 	if not webhook_id:
-		for node in playbook_doc.get("nodes", []):
-			if getattr(node, "n8n_webhook_id", None):
-				webhook_id = node.n8n_webhook_id
-				break
-			elif "webhook" in str(getattr(node, "node_type", "")).lower() and getattr(node, "n8n_node_id", None):
-				webhook_id = node.n8n_node_id
-				break
+		webhook_id = extract_webhook_id(playbook_doc)
 
-	if not webhook_id and getattr(playbook_doc, "playbook_data", None):
-		try:
-			pb_data = json.loads(playbook_doc.playbook_data) if isinstance(playbook_doc.playbook_data, str) else playbook_doc.playbook_data
-			if isinstance(pb_data, dict):
-				for node in pb_data.get("nodes", []):
-					node_type = str(node.get("type", "")).lower()
-					if "webhook" in node_type or node.get("webhookId"):
-						node_params = node.get("parameters") if isinstance(node.get("parameters"), dict) else {}
-						webhook_id = node.get("webhookId") or node_params.get("path") or node.get("id")
-						if webhook_id:
-							break
-		except Exception:
-			pass
+	if not webhook_id and getattr(frappe.flags, "current_job_id", None):
+		controller.wait_for_event(f"doc:Playbook:{playbook_name}:webhook_id")
+		playbook_doc.reload()
+		webhook_id = extract_webhook_id(playbook_doc)
 
 	if not webhook_id:
-		frappe.log_error("No webhook ID found for execution", "n8n Execution Error")
-		return
+		frappe.log_error("No webhook ID found for execution after wait", "n8n Execution Error")
+		raise frappe.ValidationError("No webhook ID found for playbook execution")
 
 	client.trigger_execution(
 		webhook_id=webhook_id,
