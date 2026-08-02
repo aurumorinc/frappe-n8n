@@ -302,7 +302,7 @@ class TestN8nTestExecutionUnit(IntegrationTestCase):
 			"doctype": "Playbook Execution",
 			"name": f"EXEC-REPLAY-{frappe.generate_hash(length=8)}",
 			"playbook": playbook.name,
-			"status": "failed",
+			"status": "error",
 			"execution_data": json.dumps({"payload_key": "payload_val"})
 		}).insert(ignore_permissions=True, ignore_links=True)
 

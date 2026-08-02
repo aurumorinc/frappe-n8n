@@ -75,3 +75,28 @@ class TestN8nPlaybookProvider(IntegrationTestCase):
 		self.playbook.reload()
 		self.assertIsNone(self.playbook.n8n_workflow_id)
 		mock_create.assert_called_once_with(self.playbook.name)
+
+	@patch("frappe_n8n.integrations.n8n.N8nClient.deactivate_workflow")
+	@patch("frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.integration_disable_workflow")
+	def test_provider_disabled_cascades_disable_to_playbooks(self, mock_disable_wf, mock_client_deactivate):
+		provider = frappe.get_doc("Playbook Provider", "n8n")
+		provider.enabled = 1
+		provider.save()
+
+		pb = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": "Test Cascade Provider PB",
+			"provider": "n8n",
+			"document_type": "ToDo",
+			"enabled": 1,
+			"status": "Enabled",
+			"n8n_workflow_id": "wf-cascade-p1"
+		}).insert(ignore_permissions=True)
+
+		provider.reload()
+		provider.enabled = 0
+		provider.save()
+
+		pb.reload()
+		self.assertEqual(pb.enabled, 0)
+

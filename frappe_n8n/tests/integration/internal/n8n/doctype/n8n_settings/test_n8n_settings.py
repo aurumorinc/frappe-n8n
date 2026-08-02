@@ -57,12 +57,24 @@ class IntegrationTestn8nSettings(IntegrationTestCase):
 		provider = frappe.get_doc("Playbook Provider", "n8n")
 		self.assertEqual(provider.enabled, 1)
 
+		pb = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": "Test Settings Cascade PB",
+			"provider": "n8n",
+			"document_type": "ToDo",
+			"enabled": 1,
+			"status": "Enabled"
+		}).insert(ignore_permissions=True)
+
 		# Disable settings
 		self.settings.enabled = 0
 		self.settings.save()
 
 		provider.reload()
 		self.assertEqual(provider.enabled, 0)
+
+		pb.reload()
+		self.assertEqual(pb.enabled, 0)
 
 	@patch("frappe_n8n.integrations.n8n.N8nClient.get_personal_project_id", side_effect=N8nError("Connection failed"))
 	def test_n8n_settings_validation_failure(self, mock_get_proj):

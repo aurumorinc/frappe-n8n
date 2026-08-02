@@ -32,6 +32,9 @@ class TestN8nPlaybook(IntegrationTestCase):
 		settings.db_set("base_url", "https://n8n.example.com")
 		settings.db_set("api_key", "test_key")
 
+		provider = frappe.get_doc("Playbook Provider", "n8n")
+		provider.db_set("enabled", 1)
+
 		playbook = frappe.get_doc({
 			"doctype": "Playbook",
 			"playbook_name": "Test N8n Playbook Hook",
@@ -54,6 +57,46 @@ class TestN8nPlaybook(IntegrationTestCase):
 		self.assertEqual(len(playbook.nodes), 1)
 		self.assertEqual(playbook.nodes[0].node_name, "Webhook")
 
+	def test_validate_cannot_enable_playbook_when_provider_disabled(self):
+		settings = frappe.get_single("n8n Settings")
+		settings.db_set("enabled", 1)
+		settings.db_set("status", "Authorized")
+
+		provider = frappe.get_doc("Playbook Provider", "n8n")
+		provider.db_set("enabled", 0)
+
+		pb = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": "Test PB Provider Disabled",
+			"provider": "n8n",
+			"document_type": "ToDo",
+			"enabled": 1,
+			"status": "Enabled"
+		})
+		with self.assertRaises(frappe.ValidationError) as cm:
+			pb.insert()
+		self.assertIn("Playbook Provider is disabled", str(cm.exception))
+
+	def test_validate_cannot_enable_playbook_when_settings_unauthorized(self):
+		settings = frappe.get_single("n8n Settings")
+		settings.db_set("enabled", 0)
+		settings.db_set("status", "Unauthorized")
+
+		provider = frappe.get_doc("Playbook Provider", "n8n")
+		provider.db_set("enabled", 1)
+
+		pb = frappe.get_doc({
+			"doctype": "Playbook",
+			"playbook_name": "Test PB Settings Unauthorized",
+			"provider": "n8n",
+			"document_type": "ToDo",
+			"enabled": 1,
+			"status": "Enabled"
+		})
+		with self.assertRaises(frappe.ValidationError) as cm:
+			pb.insert()
+		self.assertIn("Settings are not authorized", str(cm.exception))
+
 
 class TestN8NTestExecutionGracefulExit(IntegrationTestCase):
 	def setUp(self):
@@ -67,12 +110,19 @@ class TestN8NTestExecutionGracefulExit(IntegrationTestCase):
 		self.patcher3 = patch("frappe_n8n.n8n.doctype.playbook.playbook.on_trash")
 		self.mock_trash = self.patcher3.start()
 
+		settings = frappe.get_single("n8n Settings")
+		settings.db_set("enabled", 1)
+		settings.db_set("status", "Authorized")
+
 		if not frappe.db.exists("Playbook Provider", "n8n"):
 			frappe.get_doc({
 				"doctype": "Playbook Provider",
 				"provider_name": "n8n",
 				"enabled": 1
 			}).insert(ignore_permissions=True)
+		else:
+			provider = frappe.get_doc("Playbook Provider", "n8n")
+			provider.db_set("enabled", 1)
 
 		self.playbook = frappe.get_doc({
 			"doctype": "Playbook",
@@ -129,6 +179,11 @@ class TestN8NDecoupledPlaybookOperations(IntegrationTestCase):
 		self.settings.db_set("status", "Authorized")
 		self.settings.db_set("base_url", "https://n8n.example.com")
 		self.settings.db_set("api_key", "test_api_key")
+
+		if frappe.db.exists("Playbook Provider", "n8n"):
+			provider = frappe.get_doc("Playbook Provider", "n8n")
+			provider.db_set("enabled", 1)
+
 		frappe.db.commit()
 
 		if frappe.db.exists("Playbook", "Test Decoupled Playbook"):

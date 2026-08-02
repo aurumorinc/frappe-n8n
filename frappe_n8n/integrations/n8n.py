@@ -65,7 +65,7 @@ class N8nClient:
 		config = get_n8n_config()
 		if not config["enabled"] or config["status"] != "Authorized":
 			if wait_if_unauthorized and getattr(frappe.flags, "current_job_id", None):
-				controller.wait_for_event("doc:n8n Settings:authorized")
+				controller.wait_for_event("doc:n8n Settings:n8n Settings:authorized")
 				config = get_n8n_config()
 			if not config["enabled"] or config["status"] != "Authorized":
 				return None
@@ -437,6 +437,8 @@ def enable_workflow(playbook_name: str) -> None:
 		playbook_doc.db_set("n8n_workflow_id", None)
 		playbook_doc.n8n_workflow_id = None
 		create_workflow(playbook_name)
+	except Exception as e:
+		frappe.log_error(f"Failed to activate workflow for playbook {playbook_name}: {str(e)}", "n8n Activation Error")
 
 
 def disable_workflow(playbook_name: str) -> None:
@@ -547,53 +549,31 @@ def trigger_test_execution(playbook_name: str, payload: dict, execution_name: st
 
 def trigger_execution(playbook_name: str, payload: dict, execution_name: str, webhook_id: str | None = None) -> None:
 	config = get_n8n_config()
-	if config["status"] != "Authorized":
-		if getattr(frappe.flags, "current_job_id", None):
-			controller.wait_for_event("doc:n8n Settings:authorized")
-			config = get_n8n_config()
-		if config["status"] != "Authorized":
-			frappe.log_error("n8n Settings unauthorized for execution", "n8n Execution Error")
-			raise frappe.ValidationError("n8n Settings unauthorized")
+	if not config.get("enabled") or config.get("status") != "Authorized":
+		frappe.log_error("n8n Settings unauthorized for execution", "n8n Execution Error")
+		raise frappe.ValidationError("n8n Settings unauthorized")
 
-	client = N8nClient.from_settings(wait_if_unauthorized=True)
+	client = N8nClient.from_settings(wait_if_unauthorized=False)
 	if not client:
 		frappe.log_error("Unable to initialize n8n client", "n8n Execution Error")
 		raise frappe.ValidationError("n8n Client initialization failed")
 
 	playbook_doc = frappe.get_doc("Playbook", playbook_name)
 
+	if not playbook_doc.enabled:
+		frappe.log_error("Playbook is disabled for execution", "n8n Execution Error")
+		raise frappe.ValidationError("Playbook is disabled")
+
 	if not playbook_doc.n8n_workflow_id:
-		if playbook_doc.provider == "n8n":
-			create_workflow(playbook_name)
-			playbook_doc.reload()
-		if not playbook_doc.n8n_workflow_id and getattr(frappe.flags, "current_job_id", None):
+		if getattr(frappe.flags, "current_job_id", None):
 			controller.wait_for_event(f"doc:Playbook:{playbook_name}:n8n_workflow_id")
+			playbook_doc.reload()
+		if not playbook_doc.n8n_workflow_id and playbook_doc.provider == "n8n":
+			create_workflow(playbook_name)
 			playbook_doc.reload()
 		if not playbook_doc.n8n_workflow_id:
 			frappe.log_error("No workflow ID found for execution after wait", "n8n Execution Error")
 			raise frappe.ValidationError("No workflow ID found for playbook execution")
-
-	try:
-		wf = client.get_workflow(playbook_doc.n8n_workflow_id)
-		wf_active = wf.get("active", False)
-		if wf_active and not playbook_doc.enabled:
-			playbook_doc.db_set("enabled", 1)
-			playbook_doc.enabled = 1
-			controller.emit_event(key=f"doc:Playbook:{playbook_name}:enabled", argument={"status": "enabled"})
-		elif not wf_active and playbook_doc.enabled:
-			client.activate_workflow(playbook_doc.n8n_workflow_id)
-	except N8nNotFoundError:
-		playbook_doc.db_set("n8n_workflow_id", None)
-		create_workflow(playbook_name)
-		playbook_doc.reload()
-
-	if not playbook_doc.enabled:
-		if getattr(frappe.flags, "current_job_id", None):
-			controller.wait_for_event(f"doc:Playbook:{playbook_name}:enabled")
-			playbook_doc.reload()
-		if not playbook_doc.enabled:
-			frappe.log_error("Playbook is disabled for execution after wait", "n8n Execution Error")
-			raise frappe.ValidationError("Playbook is disabled")
 
 	if not webhook_id:
 		webhook_id = extract_webhook_id(playbook_doc)

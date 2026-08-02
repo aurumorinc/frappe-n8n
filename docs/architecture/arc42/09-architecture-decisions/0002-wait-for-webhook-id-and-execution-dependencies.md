@@ -1,36 +1,31 @@
-# 0002. Asynchronous Execution Dependency Synchronization via Event Bus
+# 0002. Cascading Prerequisite Verification and In-Flight Asset Synchronization via Event Bus
 
-- **Status**: Accepted
-- **Date**: 2026-07-30
+- **Status**: Updated
+- **Date**: 2026-07-30 (Updated 2026-08-15)
 - **Deciders**: Architecture Team, Core Maintainers
 
 ## Context and Problem Statement
 
-When triggering a `Playbook Execution` in `frappe_n8n`, required execution prerequisites—such as `n8n Settings` authorization status, Playbook `n8n_workflow_id`, Playbook `enabled` state, and `webhook_id`—may not be immediately available on the local document or remote engine due to asynchronous background provisioning or concurrent schema synchronization. Previously, if `webhook_id` was unpopulated, the execution handler logged "No webhook ID found" and terminated, causing dropped execution events.
+When triggering a `Playbook Execution` in `frappe_n8n`, execution prerequisites belong to a cascading hierarchy: `n8n Settings` (Authorized) -> `Playbook Provider` (Enabled) -> `Playbook` (Enabled) -> Asset Population (`n8n_workflow_id`, `webhook_id`). Previously, `trigger_execution` attempted to suspend execution jobs via `wait_for_event` for settings authorization or playbook enablement, and issued synchronous `get_workflow` and `activate_workflow` REST API calls on every execution. This caused unnecessary delays and redundant API overhead.
 
 ## Decision Drivers
 
-- Guarantee zero dropped execution events during initialization, provisioning, or concurrent playbook sync.
-- Prevent race conditions when triggering executions before webhook IDs or workflow IDs are written to the database.
-- Utilize standard `frappe_controller` event bus mechanisms (`wait_for_event` and `emit_event`) across background worker jobs (`Worker FS`).
-- Enforce clean exception handling and explicit transition to `status = 'failed'` if dependencies cannot be satisfied post-wait.
-
-## Considered Options
-
-1. Immediately log error and terminate execution when any dependency (`webhook_id`, `n8n_workflow_id`, `enabled`, `authorized`) is missing.
-2. Implement custom polling loops with `time.sleep()` inside background workers.
-3. Suspend background job execution using `frappe_controller.utils.controller.wait_for_event` and emit targeted document events (`doc:Playbook:{name}:webhook_id`, `doc:Playbook:{name}:n8n_workflow_id`, `doc:Playbook:{name}:enabled`, `doc:n8n Settings:authorized`) when dependencies are populated.
+- Enforce cascading prerequisite constraints at document lifecycle boundaries (`validate`, `on_update`).
+- Fail fast immediately during execution triggering if `n8n Settings` is unauthorized or `Playbook` is disabled (zero event waits for administrative settings/status).
+- Eliminate redundant synchronous REST API calls (`get_workflow`, `activate_workflow`) during execution triggering.
+- Retain `frappe_controller` event bus waiting (`wait_for_event`) ONLY for in-flight async asset creation completion (`n8n_workflow_id`, `webhook_id`).
 
 ## Decision Outcome
 
-Option 3: Suspend execution jobs via `frappe_controller.utils.controller.wait_for_event` and emit targeted document events upon dependency population.
+Option 3 (Refined): Implement cascading validation hooks across `Playbook`, `Playbook Provider`, and `n8n Settings`. In `trigger_execution`, fail fast on unauthorized settings or disabled playbooks, and wait only on `n8n_workflow_id` or `webhook_id` when asset creation is in-flight.
 
 ### Consequences
 
 #### Positive
-- **Resilience**: Asynchronous background jobs suspend execution gracefully when `webhook_id` or `n8n_workflow_id` is missing and resume immediately upon population via `emit_event`.
-- **Zero Dropped Executions**: Prevents premature execution failures during playbook provisioning or setting authorization.
-- **Traceability**: If dependencies remain unsatisfied after the event wait timeout, the execution document explicitly transitions to `status = 'failed'` with actionable diagnostics in system error logs.
+- **Performance**: Eliminates synchronous GET/POST HTTP REST overhead per execution trigger.
+- **Fail-Fast Predictability**: Execution background jobs fail fast immediately if settings or playbooks are disabled/unauthorized rather than lingering suspended.
+- **Cascading Integrity**: Disabling `n8n Settings` or `Playbook Provider` automatically cascades `enabled = 0` to child `Playbook` documents.
+- **In-Flight Asset Synchronization**: Retains event bus waiting for async workflow or webhook ID generation without dropping execution events.
 
 #### Negative
-- Execution background jobs may remain suspended in Redis Queue until the prerequisite event is emitted or the event wait times out.
+- Disabling settings or provider causes a cascading update across all associated playbooks in MariaDB/PostgreSQL.

@@ -42,6 +42,7 @@ doc_events = {
         "on_update": "frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.on_update"
     },
     "Playbook": {
+        "validate": "frappe_n8n.n8n.doctype.playbook.playbook.validate",
         "on_update": "frappe_n8n.n8n.doctype.playbook.playbook.on_update",
         "on_trash": "frappe_n8n.n8n.doctype.playbook.playbook.on_trash"
     },
