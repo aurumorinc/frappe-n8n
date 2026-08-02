@@ -1,6 +1,6 @@
 # 05: Playbook Execution Lifecycle
 
-This workflow models the execution lifecycle including live execution triggering, dependency synchronization (waiting for authorization, workflow ID, activation, and webhook ID), cancellation/stopping, debug URL retrieval, and replaying.
+This workflow models the execution lifecycle including live execution triggering with fail-fast cascading prerequisite verification, in-flight workflow/webhook asset resolution, cancellation/stopping, debug URL retrieval, and replaying.
 
 ```mermaid
 flowchart TD
@@ -10,24 +10,19 @@ flowchart TD
     CheckQueued -- No --> End([End Execution Lifecycle Workflow])
     CheckQueued -- Yes --> CheckSettingsAuth{n8n Settings Authorized?}
     
-    CheckSettingsAuth -- No --> WaitSettingsAuth["frappe_controller wait_for_event('doc:n8n Settings:authorized')"]
-    WaitSettingsAuth --> CheckSettingsAuth2{n8n Settings Authorized?}
-    CheckSettingsAuth2 -- No --> SetFailedAuth[Set Playbook Execution status = 'failed' & save doc] --> End
-    CheckSettingsAuth2 -- Yes --> CheckWfId
-    CheckSettingsAuth -- Yes --> CheckWfId{n8n_workflow_id present?}
+    CheckSettingsAuth -- No --> SetFailedAuth[Set Playbook Execution status = 'failed' & save doc] --> End
+    CheckSettingsAuth -- Yes --> CheckPbEnabled{Playbook enabled?}
     
-    CheckWfId -- No --> CreateWf["Call create_workflow(playbook_name)"]
-    CreateWf --> WaitWfId["frappe_controller wait_for_event('doc:Playbook:{playbook}:n8n_workflow_id')"]
+    CheckPbEnabled -- No --> SetFailedDisabled[Set Playbook Execution status = 'failed' & save doc] --> End
+    CheckPbEnabled -- Yes --> CheckWfId{n8n_workflow_id present?}
+    
+    CheckWfId -- No --> WaitWfId["frappe_controller wait_for_event('doc:Playbook:{playbook}:n8n_workflow_id')"]
     WaitWfId --> CheckWfId2{n8n_workflow_id present?}
-    CheckWfId2 -- No --> SetFailedWf[Set Playbook Execution status = 'failed' & save doc] --> End
-    CheckWfId2 -- Yes --> CheckPbEnabled
-    CheckWfId -- Yes --> CheckPbEnabled{Playbook enabled?}
-    
-    CheckPbEnabled -- No --> WaitPbEnabled["frappe_controller wait_for_event('doc:Playbook:{playbook}:enabled')"]
-    WaitPbEnabled --> CheckPbEnabled2{Playbook enabled?}
-    CheckPbEnabled2 -- No --> SetFailedDisabled[Set Playbook Execution status = 'failed' & save doc] --> End
-    CheckPbEnabled2 -- Yes --> ExtractPayload
-    CheckPbEnabled -- Yes --> ExtractPayload[Parse execution_data JSON]
+    CheckWfId2 -- No --> CreateWf["Call create_workflow(playbook_name)"] --> CheckWfId3{n8n_workflow_id present?}
+    CheckWfId3 -- No --> SetFailedWf[Set Playbook Execution status = 'failed' & save doc] --> End
+    CheckWfId3 -- Yes --> ExtractPayload
+    CheckWfId2 -- Yes --> ExtractPayload
+    CheckWfId -- Yes --> ExtractPayload[Parse execution_data JSON]
     
     ExtractPayload --> ResolveWebhook[Extract webhook_id from nodes or playbook_data]
     ResolveWebhook --> HasWebhook{webhook_id found?}

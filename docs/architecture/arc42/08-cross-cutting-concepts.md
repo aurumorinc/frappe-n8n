@@ -12,11 +12,11 @@ This chapter documents overall cross-cutting patterns, security architectures, e
 ## 2. Event-Driven Event Bus & Synchronization (`frappe_controller`)
 
 - Uses `frappe_controller.utils.controller` (`emit_event`, `wait_for_event`) to coordinate async operations:
-  - `doc:n8n Settings:authorized`: Emitted when settings become valid. Trigger execution handlers block and wait on this event if settings are unverified.
+  - `doc:n8n Settings:authorized`: Emitted when settings become valid to notify background tasks.
   - `n8n_credential_ready`: Emitted when `crm_n8n_api_key` credential creation/update completes in n8n.
-  - `n8n_workflow_created` / `doc:Playbook:{name}:n8n_workflow_id`: Emitted when an n8n workflow is created or updated with a workflow ID. Trigger execution blocks and waits on `doc:Playbook:{name}:n8n_workflow_id` if the workflow ID is missing.
-  - `doc:Playbook:{name}:enabled`: Emitted when a playbook is enabled. Trigger execution waits for this event if the playbook is currently disabled.
-  - `doc:Playbook:{name}:webhook_id`: Emitted when a playbook's webhook ID is populated during provider sync, workflow creation, or document save. Trigger execution blocks and waits on this event if the webhook ID is not yet resolved.
+  - `n8n_workflow_created` / `doc:Playbook:{name}:n8n_workflow_id`: Emitted when an n8n workflow is created or updated with a workflow ID. Trigger execution blocks and waits on `doc:Playbook:{name}:n8n_workflow_id` if in-flight workflow creation is pending.
+  - `doc:Playbook:{name}:enabled`: Emitted when a playbook is enabled to notify listening workers.
+  - `doc:Playbook:{name}:webhook_id`: Emitted when a playbook's webhook ID is populated during provider sync, workflow creation, or document save. Trigger execution blocks and waits on this event if in-flight webhook ID extraction is pending.
 
 ## 3. Resilience & Error Handling
 
