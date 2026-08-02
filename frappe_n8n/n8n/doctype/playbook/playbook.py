@@ -93,16 +93,35 @@ def delete_workflow(workflow_id):
 	integration_delete_workflow(workflow_id)
 
 
+def validate(doc, method=None):
+	if doc.provider != "n8n" or not doc.enabled:
+		return
+
+	if getattr(frappe.flags, "in_playbook_sync", False):
+		return
+
+	provider_enabled = frappe.db.get_value("Playbook Provider", "n8n", "enabled")
+	if not provider_enabled:
+		frappe.throw("Cannot enable Playbook because the n8n Playbook Provider is disabled.")
+
+	settings = frappe.get_single("n8n Settings")
+	if not settings.enabled or settings.status != "Authorized":
+		frappe.throw("Cannot enable Playbook because n8n Settings are not authorized.")
+
+
 def on_update(doc, method=None):
 	if doc.provider != "n8n":
 		return
 	if not doc.n8n_workflow_id:
 		enqueue_create_workflow(doc.name)
-	elif not doc.flags.in_insert and doc.get_doc_before_save() and doc.has_value_changed("enabled"):
-		if doc.enabled:
+	elif doc.enabled:
+		if not doc.flags.in_insert and doc.get_doc_before_save() and doc.has_value_changed("enabled"):
 			integration_enable_workflow(doc.name)
 		else:
-			integration_disable_workflow(doc.name)
+			from frappe_controller.utils.controller import emit_event
+			emit_event(key=f"doc:Playbook:{doc.name}:enabled", argument={"status": "enabled"})
+	elif not doc.flags.in_insert and doc.get_doc_before_save() and doc.has_value_changed("enabled"):
+		integration_disable_workflow(doc.name)
 
 
 def on_trash(doc, method=None):
