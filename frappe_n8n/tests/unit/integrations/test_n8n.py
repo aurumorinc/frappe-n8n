@@ -65,7 +65,7 @@ class TestN8nClient(UnitTestCase):
 			{"enabled": True, "status": "Authorized", "base_url": "http://n8n.test", "api_key": "k"}
 		]
 		client = N8nClient.from_settings(wait_if_unauthorized=True)
-		mock_wait.assert_called_once_with("doc:n8n Settings:authorized")
+		mock_wait.assert_called_once_with("doc:n8n Settings:n8n Settings:authorized")
 		self.assertIsNotNone(client)
 
 	@patch("requests.get")
@@ -311,6 +311,42 @@ class TestN8nClient(UnitTestCase):
 		res = self.client.resume_execution("http://n8n.test/resume/123", {"a": 1}, webhook_security="sec")
 		self.assertEqual(res.status_code, 200)
 
+	@patch("frappe_n8n.integrations.n8n.controller.wait_for_event")
+	@patch("frappe_n8n.integrations.n8n.frappe")
+	@patch("frappe_n8n.integrations.n8n.get_n8n_config")
+	def test_trigger_execution_fails_fast_when_unauthorized(self, mock_config, mock_frappe, mock_wait):
+		from frappe_n8n.integrations.n8n import trigger_execution
+
+		mock_frappe.ValidationError = frappe.ValidationError
+		mock_config.return_value = {"enabled": False, "status": "Unauthorized"}
+
+		with self.assertRaises(frappe.ValidationError):
+			trigger_execution("pb-unauth", {"a": 1}, "exec-unauth")
+
+		mock_wait.assert_not_called()
+		mock_frappe.log_error.assert_called_with("n8n Settings unauthorized for execution", "n8n Execution Error")
+
+	@patch("frappe_n8n.integrations.n8n.controller.wait_for_event")
+	@patch("frappe_n8n.integrations.n8n.frappe")
+	@patch("frappe_n8n.integrations.n8n.get_n8n_config")
+	def test_trigger_execution_fails_fast_when_playbook_disabled(self, mock_config, mock_frappe, mock_wait):
+		from frappe_n8n.integrations.n8n import trigger_execution
+
+		mock_frappe.ValidationError = frappe.ValidationError
+		mock_config.return_value = {"enabled": True, "status": "Authorized"}
+
+		mock_pb = MagicMock()
+		mock_pb.enabled = False
+		mock_frappe.get_doc.return_value = mock_pb
+
+		mock_client = MagicMock()
+		with patch("frappe_n8n.integrations.n8n.N8nClient.from_settings", return_value=mock_client):
+			with self.assertRaises(frappe.ValidationError):
+				trigger_execution("pb-disabled", {"a": 1}, "exec-disabled")
+
+		mock_wait.assert_not_called()
+		mock_frappe.log_error.assert_called_with("Playbook is disabled for execution", "n8n Execution Error")
+
 	@patch("frappe_n8n.integrations.n8n.N8nClient.trigger_execution")
 	@patch("frappe_n8n.integrations.n8n.N8nClient.from_settings")
 	@patch("frappe_n8n.integrations.n8n.controller.wait_for_event")
@@ -320,9 +356,8 @@ class TestN8nClient(UnitTestCase):
 		from frappe_n8n.integrations.n8n import trigger_execution
 
 		mock_frappe.flags.current_job_id = "job-unit-wh"
-		mock_config.return_value = {"status": "Authorized", "webhook_security": "sec123"}
+		mock_config.return_value = {"enabled": True, "status": "Authorized", "webhook_security": "sec123"}
 		mock_client = MagicMock()
-		mock_client.get_workflow.return_value = {"active": True}
 		mock_client_cls.return_value = mock_client
 
 		mock_pb = MagicMock()
@@ -344,6 +379,7 @@ class TestN8nClient(UnitTestCase):
 		trigger_execution("pb-wh-test", {"a": 1}, "exec-wh-1")
 
 		mock_wait.assert_called_with("doc:Playbook:pb-wh-test:webhook_id")
+		mock_client.get_workflow.assert_not_called()
 		mock_client.trigger_execution.assert_called_once_with(
 			webhook_id="wh-populated-after-wait",
 			payload={"a": 1},
@@ -359,7 +395,7 @@ class TestN8nClient(UnitTestCase):
 
 		mock_frappe.ValidationError = frappe.ValidationError
 		mock_frappe.flags.current_job_id = "job-unit-missing"
-		mock_config.return_value = {"status": "Authorized", "webhook_security": "sec123"}
+		mock_config.return_value = {"enabled": True, "status": "Authorized", "webhook_security": "sec123"}
 		mock_client = MagicMock()
 		mock_client.get_workflow.return_value = {"active": True}
 
