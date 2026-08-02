@@ -20,7 +20,9 @@ def on_update(doc, method=None):
 			if doc.enabled:
 				integration_enable_workflow(pb.name)
 			else:
-				integration_disable_workflow(pb.name)
+				pb_doc = frappe.get_doc("Playbook", pb.name)
+				pb_doc.enabled = 0
+				pb_doc.save(ignore_permissions=True)
 
 
 def enqueue_update_playbooks():
