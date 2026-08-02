@@ -45,11 +45,13 @@ class n8nSettings(Document):
 	def on_update(self):
 		if frappe.db.exists("Playbook Provider", "n8n"):
 			provider = frappe.get_doc("Playbook Provider", "n8n")
-			provider.enabled = self.enabled
-			provider.save(ignore_permissions=True)
+			target_enabled = 1 if (self.enabled and self.status == "Authorized") else 0
+			if provider.enabled != target_enabled:
+				provider.enabled = target_enabled
+				provider.save(ignore_permissions=True)
 
 		if self.enabled and self.status == "Authorized":
-			emit_event(key="doc:n8n Settings:authorized", argument={"status": "success"})
+			emit_event(key="doc:n8n Settings:n8n Settings:authorized", argument={"status": "success"})
 			frappe.enqueue("frappe_n8n.integrations.n8n.update_credential")
 
 			if self.has_value_changed("project_id") or self.has_value_changed("base_url"):
