@@ -142,7 +142,10 @@ class N8nClient:
 		try:
 			self._request("PUT", f"/api/v1/credentials/{credential_id}/transfer", json=payload)
 		except N8nError as e:
-			if e.status_code == 400 and ("same destination" in str(e).lower() or "already belongs" in str(e).lower()):
+			if e.status_code == 400 and any(
+				msg in str(e).lower()
+				for msg in ["same destination", "already belongs", "already owning", "already owns"]
+			):
 				return
 			raise
 
@@ -165,7 +168,10 @@ class N8nClient:
 		try:
 			self._request("PUT", f"/api/v1/workflows/{workflow_id}/transfer", json=payload)
 		except N8nError as e:
-			if e.status_code == 400 and ("same destination" in str(e).lower() or "already belongs" in str(e).lower()):
+			if e.status_code == 400 and any(
+				msg in str(e).lower()
+				for msg in ["same destination", "already belongs", "already owning", "already owns"]
+			):
 				return
 			raise
 
