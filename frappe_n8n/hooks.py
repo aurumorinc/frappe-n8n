@@ -33,8 +33,7 @@ controller_events = {
     "frappe_n8n.integrations.n8n.resume_execution": {},
     "frappe_n8n.n8n.doctype.playbook_provider.playbook_provider.update_a_playbook": {},
     "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.trigger_execution": {},
-    "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.resume_execution": {},
-    "frappe_playbook.playbook.doctype.playbook_execution.playbook_execution.trigger_execution": {}
+    "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.resume_execution": {}
 }
 
 doc_events = {
@@ -47,6 +46,7 @@ doc_events = {
         "on_trash": "frappe_n8n.n8n.doctype.playbook.playbook.on_trash"
     },
     "Playbook Execution": {
+        "after_insert": "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.after_insert",
         "on_update": "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.on_update"
     },
     "ToDo": {
@@ -58,8 +58,7 @@ override_whitelisted_methods = {
     "frappe_playbook.playbook.doctype.playbook.playbook.get_builder_url": "frappe_n8n.n8n.doctype.playbook.playbook.get_builder_url",
     "frappe_playbook.playbook.doctype.playbook.playbook.trigger_test_execution": "frappe_n8n.n8n.doctype.playbook.playbook.trigger_test_execution",
     "frappe_playbook.playbook.doctype.playbook_execution.playbook_execution.get_debug_url": "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.get_debug_url",
-    "frappe_playbook.playbook.doctype.playbook_execution.playbook_execution.replay": "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.replay",
-    "frappe_playbook.playbook.doctype.playbook_execution.playbook_execution.trigger_execution": "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.trigger_execution"
+    "frappe_playbook.playbook.doctype.playbook_execution.playbook_execution.replay": "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.replay"
 }
 
 fixtures = [

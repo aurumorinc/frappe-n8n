@@ -120,7 +120,7 @@ class TestN8nTestExecutionUnit(IntegrationTestCase):
 		}).insert(ignore_permissions=True, ignore_links=True)
 
 		mock_enqueue.assert_any_call(
-			"frappe_playbook.playbook.doctype.playbook_execution.playbook_execution.trigger_execution",
+			"frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.trigger_execution",
 			execution_name=execution.name,
 			queue="high"
 		)
@@ -279,10 +279,6 @@ class TestN8nTestExecutionUnit(IntegrationTestCase):
 
 		execution.reload()
 		self.assertEqual(execution.status, "running")
-
-	def test_whitelisted_method_override_resolves_n8n_trigger(self):
-		method = frappe.override_whitelisted_method("frappe_playbook.playbook.doctype.playbook_execution.playbook_execution.trigger_execution")
-		self.assertEqual(method, "frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.trigger_execution")
 
 	def test_whitelisted_method_override_resolves_n8n_replay(self):
 		method = frappe.override_whitelisted_method("frappe_playbook.playbook.doctype.playbook_execution.playbook_execution.replay")
