@@ -18,7 +18,7 @@ The component view details all DocTypes, custom fields, helper modules, and API 
 
 ### 1. `n8n Settings` (`frappe_n8n.n8n.doctype.n8n_settings.n8n_settings`)
 - **Type**: Single DocType.
-- **Responsibilities**: Stores `base_url`, `api_key`, `enabled`, `status`, `webhook_security`, `webhook_credential_id`, and `project_id`. Validates connection on save and enqueues credential and workflow migration tasks.
+- **Responsibilities**: Stores `base_url`, `api_key`, `enabled`, `status`, `webhook_secret`, `webhook_credential_id`, and `project_id`. Validates connection on save and enqueues credential and workflow migration tasks.
 
 ### 2. `N8nClient` (`frappe_n8n.integrations.n8n.N8nClient`)
 - **Type**: Python REST API Client class.

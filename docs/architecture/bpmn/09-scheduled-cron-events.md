@@ -13,11 +13,11 @@ flowchart TD
     IsEnabled -- Yes --> EnqRotate["Enqueue rotate_credentials in Redis Queue"]
     EnqRotate --> WorkerRotate["Worker FS executes rotate_credentials"]
     
-    WorkerRotate --> GenSec[Generate new 32-char webhook_security hash]
+    WorkerRotate --> GenSec[Generate new 32-char webhook_secret hash]
     GenSec --> CheckCredId{webhook_credential_id present?}
     
     CheckCredId -- Yes --> PatchCred["n8n API PATCH /api/v1/credentials/{id}"]
-    PatchCred --> SyncSettings[Update webhook_security & webhook_secret_updated on n8n Settings]
+    PatchCred --> SyncSettings[Update webhook_secret & webhook_secret_updated on n8n Settings]
     SyncSettings --> EmitCredReady["frappe_controller emit_event('n8n_credential_ready')"] --> End
     
     CheckCredId -- No --> FallbackUpdate[Call update_credential] --> End

@@ -12,4 +12,4 @@ Alphabetical dictionary of domain and technical terms used in `frappe_n8n` docum
 | **`Playbook Execution`** | DocType representing an instance execution of a Playbook, tracking status and payload data. Extended with `n8n_execution_id`. |
 | **`Playbook Node`** | Child table on `Playbook` recording individual workflow nodes, types, and n8n webhook IDs. |
 | **`Playbook Provider`** | Registration DocType for workflow providers (`name="n8n"`). |
-| **`webhook_security`** | 32-character high-entropy secret token generated in `frappe_n8n` and provisioned as an HTTP Header credential in n8n (`crm_n8n_api_key`). |
+| **`webhook_secret`** | 32-character high-entropy secret token generated in `frappe_n8n` and provisioned as an HTTP Header credential in n8n (`crm_n8n_api_key`). |

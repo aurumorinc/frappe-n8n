@@ -7,7 +7,7 @@ This chapter identifies technical risks, single points of failure, and technical
 | Risk ID | Risk Description | Severity | Impact | Mitigation Strategy |
 |---------|------------------|----------|--------|---------------------|
 | **R-01** | **Network Latency or Outage during Webhook Trigger**: External n8n server is unreachable when `trigger_execution` is called. | High | Execution marked as `failed`. | Implement exponential backoff retry policy using `frappe.enqueue` retry parameters. |
-| **R-02** | **Guest Callback Endpoint Abuse**: Whitelisted callback endpoint (`allow_guest=True`) exposed to brute-force or spam POST requests. | Medium | Potential execution doc spam. | Enforce webhook token verification (`webhook_security`) and rate-limiting at Nginx gateway level. |
+| **R-02** | **Guest Callback Endpoint Abuse**: Whitelisted callback endpoint (`allow_guest=True`) exposed to brute-force or spam POST requests. | Medium | Potential execution doc spam. | Enforce webhook token verification (`webhook_secret`) and rate-limiting at Nginx gateway level. |
 | **R-03** | **Unsynced Playbook Schemas**: User modifies workflow nodes directly in n8n UI without updating Frappe. | Medium | Discrepancy in `Playbook Node` child table. | Periodic background sync (`enqueue_update_playbooks`) runs on scheduler to fetch latest nodes and connections. |
 
 ## Technical Debt Inventory
