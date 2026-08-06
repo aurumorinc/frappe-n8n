@@ -15,8 +15,8 @@ from frappe_n8n.integrations.n8n import (
 
 class n8nSettings(Document):
 	def validate(self):
-		if not self.webhook_security and not self.get_password("webhook_security", raise_exception=False):
-			self.webhook_security = frappe.generate_hash(length=32)
+		if not self.webhook_secret and not self.get_password("webhook_secret", raise_exception=False):
+			self.webhook_secret = frappe.generate_hash(length=32)
 
 		conf_enabled = frappe.conf.get("n8n_enabled")
 		is_enabled = bool(conf_enabled) if conf_enabled is not None else bool(self.enabled)
