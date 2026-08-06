@@ -3,6 +3,7 @@
 
 import json
 import frappe
+from frappe_controller.utils.background_jobs import enqueue
 from frappe_controller.utils.controller import wait_for_event
 from frappe_n8n.integrations.n8n import (
 	trigger_execution as integration_trigger_execution,
@@ -10,6 +11,20 @@ from frappe_n8n.integrations.n8n import (
 	resume_execution as integration_resume_execution,
 	get_n8n_config,
 )
+
+
+def after_insert(doc, method=None):
+	enqueue_trigger_execution(doc)
+
+
+def enqueue_trigger_execution(doc):
+	provider = frappe.db.get_value("Playbook", doc.playbook, "provider")
+	if provider == "n8n":
+		enqueue(
+			"frappe_n8n.n8n.doctype.playbook_execution.playbook_execution.trigger_execution",
+			execution_name=doc.name,
+			queue="high"
+		)
 
 
 def trigger_execution(execution_name):
