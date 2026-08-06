@@ -20,7 +20,7 @@ class TestN8nTestExecutionUnit(IntegrationTestCase):
 		settings.db_set("enabled", 1)
 		settings.db_set("status", "Authorized")
 		settings.db_set("base_url", "https://n8n.example.com")
-		settings.db_set("webhook_security", "test_token")
+		settings.db_set("webhook_secret", "test_token")
 		settings.db_set("api_key", "test_key")
 
 	def tearDown(self):
