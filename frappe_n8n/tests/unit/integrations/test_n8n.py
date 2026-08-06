@@ -143,6 +143,15 @@ class TestN8nClient(UnitTestCase):
 		# Should not raise exception
 		self.client.move_credential("cred-123", "proj-456")
 
+	@patch("requests.put")
+	def test_n8n_client_move_credential_already_owning_idempotent(self, mock_put):
+		mock_res = MagicMock()
+		mock_res.status_code = 400
+		mock_res.text = '{"message":"You can\'t transfer a credential into the project that\'s already owning it."}'
+		mock_put.return_value = mock_res
+		# Should not raise exception
+		self.client.move_credential("cred-123", "proj-456")
+
 	@patch("requests.get")
 	def test_n8n_client_get_workflow(self, mock_get):
 		mock_res = MagicMock()
@@ -174,6 +183,15 @@ class TestN8nClient(UnitTestCase):
 		mock_res = MagicMock()
 		mock_res.status_code = 400
 		mock_res.text = '{"message":"You can\'t transfer a workflow into the same destination it already belongs to."}'
+		mock_put.return_value = mock_res
+		# Should not raise exception
+		self.client.move_workflow("wf-123", "proj-789")
+
+	@patch("requests.put")
+	def test_n8n_client_move_workflow_already_owning_idempotent(self, mock_put):
+		mock_res = MagicMock()
+		mock_res.status_code = 400
+		mock_res.text = '{"message":"You can\'t transfer a workflow into the project that\'s already owning it."}'
 		mock_put.return_value = mock_res
 		# Should not raise exception
 		self.client.move_workflow("wf-123", "proj-789")
