@@ -5,8 +5,8 @@ This chapter documents overall cross-cutting patterns, security architectures, e
 ## 1. Security & Authentication Architecture
 
 - **n8n API Key Storage**: Stored as a Frappe `Password` field in `n8n Settings` (`api_key`) and retrieved securely via `settings.get_password("api_key")`.
-- **Webhook Authorization Secret**: Generated as a 32-character random hash (`webhook_security`) stored as a `Password` field. Provisioned in n8n as an `httpHeaderAuth` credential (`crm_n8n_api_key`) injecting `Bearer {webhook_security}` into outgoing n8n webhooks.
-- **Quarterly Automated Rotation**: Scheduled cron job (`enqueue_rotate_credentials`) automatically rotates `webhook_security` every 3 months and updates n8n credentials without downtime.
+- **Webhook Authorization Secret**: Generated as a 32-character random hash (`webhook_secret`) stored as a `Password` field. Provisioned in n8n as an `httpHeaderAuth` credential (`crm_n8n_api_key`) injecting `Bearer {webhook_secret}` into outgoing n8n webhooks.
+- **Quarterly Automated Rotation**: Scheduled cron job (`enqueue_rotate_credentials`) automatically rotates `webhook_secret` every 3 months and updates n8n credentials without downtime.
 - **Payload Sanitization**: The callback endpoint (`_apply_payload_to_execution_doc`) explicitly blocks updates to administrative system fields (`DISALLOWED_FIELDS` = `{"name", "owner", "creation", "modified", "modified_by", "idx", "docstatus", "doctype", "playbook", "reference_doctype", "reference_name"}`) to prevent privilege escalation.
 
 ## 2. Event-Driven Event Bus & Synchronization (`frappe_controller`)
@@ -31,7 +31,7 @@ This chapter documents overall cross-cutting patterns, security architectures, e
 - Supports environment-level overrides via `frappe.conf` keys:
   - `n8n_base_url`: Overrides `base_url` in settings.
   - `n8n_api_key`: Overrides `api_key` in settings.
-  - `n8n_webhook_security`: Overrides `webhook_security` in settings.
+  - `n8n_webhook_secret`: Overrides `webhook_secret` in settings.
   - `n8n_project_id`: Overrides `project_id` in settings.
   - `n8n_enabled`: Overrides `enabled` state in settings.
 - Uses runtime flags like `frappe.flags.in_playbook_sync` to bypass recursive change detection during schema synchronization.

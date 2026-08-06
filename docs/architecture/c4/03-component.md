@@ -21,7 +21,7 @@ erDiagram
         string api_key "n8n API Key (Password)"
         boolean enabled "Enable Integration"
         string status "Disabled | Authorized | Unauthorized"
-        string webhook_security "32-char Webhook Token (Password)"
+        string webhook_secret "32-char Webhook Token (Password)"
         string webhook_credential_id "n8n Credential ID"
         string project_id "n8n Project ID"
     }

@@ -42,7 +42,7 @@ class IntegrationTestn8nSettings(IntegrationTestCase):
 		self.settings.status = "Authorized"
 		self.settings.base_url = "https://n8n.example.com"
 		self.settings.api_key = "test_api_key"
-		self.settings.webhook_security = "test_webhook_token"
+		self.settings.webhook_secret = "test_webhook_token"
 		self.settings.save()
 
 	def test_n8n_settings_save_and_retrieve(self):
@@ -50,7 +50,7 @@ class IntegrationTestn8nSettings(IntegrationTestCase):
 		self.assertEqual(settings.enabled, 1)
 		self.assertEqual(settings.base_url, "https://n8n.example.com")
 		self.assertEqual(settings.get_password("api_key"), "test_api_key")
-		self.assertEqual(settings.get_password("webhook_security"), "test_webhook_token")
+		self.assertEqual(settings.get_password("webhook_secret"), "test_webhook_token")
 
 	def test_n8n_settings_registers_provider(self):
 		self.assertTrue(frappe.db.exists("Playbook Provider", "n8n"))
@@ -97,7 +97,7 @@ class IntegrationTestn8nSettings(IntegrationTestCase):
 		settings.db_set("status", "Authorized")
 		settings.db_set("base_url", "https://n8n.example.com")
 		settings.db_set("api_key", "test_api_key")
-		settings.db_set("webhook_security", "")
+		settings.db_set("webhook_secret", "")
 		settings.db_set("webhook_credential_id", "")
 
 		from frappe_n8n.n8n.doctype.n8n_settings.n8n_settings import update_webhook_credential
@@ -183,7 +183,7 @@ class IntegrationTestn8nSettings(IntegrationTestCase):
 
 		settings.reload()
 		self.assertEqual(settings.webhook_credential_id, "found_cred_id")
-		sec_token = settings.get_password("webhook_security") or settings.webhook_security
+		sec_token = settings.get_password("webhook_secret") or settings.webhook_secret
 		mock_update.assert_called_once_with("found_cred_id", sec_token)
 		mock_emit.assert_any_call(key="n8n_credential_ready", argument={"status": "success"})
 
@@ -196,7 +196,7 @@ class IntegrationTestn8nSettings(IntegrationTestCase):
 		settings.base_url = "https://n8n.example.com"
 		settings.api_key = "test_api_key"
 		settings.webhook_credential_id = "test_cred_id"
-		settings.webhook_security = "test_webhook_token"
+		settings.webhook_secret = "test_webhook_token"
 		settings.save()
 
 		from frappe_n8n.n8n.doctype.n8n_settings.n8n_settings import rotate_credentials
@@ -213,7 +213,7 @@ class IntegrationTestn8nSettings(IntegrationTestCase):
 		settings.db_set("base_url", "https://n8n.example.com")
 		settings.db_set("api_key", "test_api_key")
 		settings.db_set("webhook_credential_id", "test_cred_id")
-		settings.db_set("webhook_security", "test_webhook_token")
+		settings.db_set("webhook_secret", "test_webhook_token")
 
 		from frappe_n8n.n8n.doctype.n8n_settings.n8n_settings import enqueue_rotate_credentials
 		enqueue_rotate_credentials()

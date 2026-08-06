@@ -4,7 +4,7 @@ This workflow models the behavior triggered when an administrator saves or updat
 
 ```mermaid
 flowchart TD
-    Start([User saves n8n Settings]) --> ValSec{webhook_security present?}
+    Start([User saves n8n Settings]) --> ValSec{webhook_secret present?}
     ValSec -- No --> GenSec[Generate 32-char security token] --> ReadConf
     ValSec -- Yes --> ReadConf[Read base_url, api_key, enabled, project_id]
     ReadConf --> IsEnabled{enabled == 1?}

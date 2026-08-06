@@ -253,7 +253,7 @@ class TestN8nClient(UnitTestCase):
 		mock_res = MagicMock()
 		mock_res.status_code = 200
 		mock_post.return_value = mock_res
-		res = self.client.trigger_execution("hook-1", {"a": 1}, "exec-1", webhook_security="sec")
+		res = self.client.trigger_execution("hook-1", {"a": 1}, "exec-1", webhook_secret="sec")
 		self.assertEqual(res.status_code, 200)
 		headers = mock_post.call_args.kwargs["headers"]
 		self.assertEqual(headers.get("frappe-id"), "exec-1")
@@ -266,7 +266,7 @@ class TestN8nClient(UnitTestCase):
 		mock_res = MagicMock()
 		mock_res.status_code = 200
 		mock_post.return_value = mock_res
-		res = self.client.trigger_test_execution("hook-1", {"a": 1}, "test-exec-1", webhook_security="sec")
+		res = self.client.trigger_test_execution("hook-1", {"a": 1}, "test-exec-1", webhook_secret="sec")
 		self.assertEqual(res.status_code, 200)
 		headers = mock_post.call_args.kwargs["headers"]
 		self.assertEqual(headers.get("frappe-id"), "test-exec-1")
@@ -326,7 +326,7 @@ class TestN8nClient(UnitTestCase):
 		mock_res = MagicMock()
 		mock_res.status_code = 200
 		mock_post.return_value = mock_res
-		res = self.client.resume_execution("http://n8n.test/resume/123", {"a": 1}, webhook_security="sec")
+		res = self.client.resume_execution("http://n8n.test/resume/123", {"a": 1}, webhook_secret="sec")
 		self.assertEqual(res.status_code, 200)
 
 	@patch("frappe_n8n.integrations.n8n.controller.wait_for_event")
@@ -374,7 +374,7 @@ class TestN8nClient(UnitTestCase):
 		from frappe_n8n.integrations.n8n import trigger_execution
 
 		mock_frappe.flags.current_job_id = "job-unit-wh"
-		mock_config.return_value = {"enabled": True, "status": "Authorized", "webhook_security": "sec123"}
+		mock_config.return_value = {"enabled": True, "status": "Authorized", "webhook_secret": "sec123"}
 		mock_client = MagicMock()
 		mock_client_cls.return_value = mock_client
 
@@ -402,7 +402,7 @@ class TestN8nClient(UnitTestCase):
 			webhook_id="wh-populated-after-wait",
 			payload={"a": 1},
 			execution_name="exec-wh-1",
-			webhook_security="sec123",
+			webhook_secret="sec123",
 		)
 
 	@patch("frappe_n8n.integrations.n8n.controller.wait_for_event")
@@ -413,7 +413,7 @@ class TestN8nClient(UnitTestCase):
 
 		mock_frappe.ValidationError = frappe.ValidationError
 		mock_frappe.flags.current_job_id = "job-unit-missing"
-		mock_config.return_value = {"enabled": True, "status": "Authorized", "webhook_security": "sec123"}
+		mock_config.return_value = {"enabled": True, "status": "Authorized", "webhook_secret": "sec123"}
 		mock_client = MagicMock()
 		mock_client.get_workflow.return_value = {"active": True}
 

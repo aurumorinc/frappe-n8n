@@ -16,7 +16,7 @@ def get_n8n_config() -> dict:
 
 	base_url = frappe.conf.get("n8n_base_url") or getattr(settings, "base_url", None) or ""
 	api_key = frappe.conf.get("n8n_api_key") or settings.get_password("api_key", raise_exception=False) or getattr(settings, "api_key", None) or ""
-	webhook_security = frappe.conf.get("n8n_webhook_security") or settings.get_password("webhook_security", raise_exception=False) or getattr(settings, "webhook_security", None) or ""
+	webhook_secret = frappe.conf.get("n8n_webhook_secret") or settings.get_password("webhook_secret", raise_exception=False) or getattr(settings, "webhook_secret", None) or ""
 	project_id = frappe.conf.get("n8n_project_id") or getattr(settings, "project_id", None) or ""
 
 	conf_enabled = frappe.conf.get("n8n_enabled")
@@ -33,7 +33,7 @@ def get_n8n_config() -> dict:
 	return {
 		"base_url": base_url,
 		"api_key": api_key,
-		"webhook_security": webhook_security,
+		"webhook_secret": webhook_secret,
 		"project_id": project_id,
 		"enabled": enabled,
 		"status": status,
@@ -107,13 +107,13 @@ class N8nClient:
 					return item.get("id")
 		return None
 
-	def update_credential(self, credential_id: str, webhook_security: str) -> dict:
+	def update_credential(self, credential_id: str, webhook_secret: str) -> dict:
 		payload = {
 			"name": "crm_n8n_api_key",
 			"type": "httpHeaderAuth",
 			"data": {
 				"name": "Authorization",
-				"value": f"Bearer {webhook_security}"
+				"value": f"Bearer {webhook_secret}"
 			}
 		}
 		res = self._request("PATCH", f"/api/v1/credentials/{credential_id}", json=payload)
@@ -124,13 +124,13 @@ class N8nClient:
 		data = res.json()
 		return data.get("data", data) if isinstance(data, dict) else data
 
-	def create_credential(self, name: str, webhook_security: str) -> str:
+	def create_credential(self, name: str, webhook_secret: str) -> str:
 		payload = {
 			"name": name,
 			"type": "httpHeaderAuth",
 			"data": {
 				"name": "Authorization",
-				"value": f"Bearer {webhook_security}"
+				"value": f"Bearer {webhook_secret}"
 			}
 		}
 		res = self._request("POST", "/api/v1/credentials", json=payload)
@@ -196,28 +196,28 @@ class N8nClient:
 				return {}
 			raise
 
-	def trigger_execution(self, webhook_id: str, payload: dict, execution_name: str, webhook_security: str | None = None) -> requests.Response:
+	def trigger_execution(self, webhook_id: str, payload: dict, execution_name: str, webhook_secret: str | None = None) -> requests.Response:
 		headers = dict(self.headers)
-		if webhook_security:
-			headers["Authorization"] = f"Bearer {webhook_security}"
+		if webhook_secret:
+			headers["Authorization"] = f"Bearer {webhook_secret}"
 		if execution_name:
 			headers["frappe-id"] = execution_name
 		url = f"{self.base_url}/webhook/{webhook_id}"
 		return requests.post(url, json=payload, headers=headers, timeout=10)
 
-	def trigger_test_execution(self, webhook_id: str, payload: dict, execution_name: str, webhook_security: str | None = None) -> requests.Response:
+	def trigger_test_execution(self, webhook_id: str, payload: dict, execution_name: str, webhook_secret: str | None = None) -> requests.Response:
 		headers = dict(self.headers)
-		if webhook_security:
-			headers["Authorization"] = f"Bearer {webhook_security}"
+		if webhook_secret:
+			headers["Authorization"] = f"Bearer {webhook_secret}"
 		if execution_name:
 			headers["frappe-id"] = execution_name
 		url = f"{self.base_url}/webhook-test/{webhook_id}"
 		return requests.post(url, json=payload, headers=headers, timeout=10)
 
-	def resume_execution(self, url: str, payload: dict, webhook_security: str | None = None) -> requests.Response:
+	def resume_execution(self, url: str, payload: dict, webhook_secret: str | None = None) -> requests.Response:
 		headers = dict(self.headers)
-		if webhook_security:
-			headers["Authorization"] = f"Bearer {webhook_security}"
+		if webhook_secret:
+			headers["Authorization"] = f"Bearer {webhook_secret}"
 		return requests.post(url, json=payload, headers=headers, timeout=10)
 
 
@@ -227,17 +227,17 @@ def update_credential():
 	if not client:
 		return
 
-	webhook_security = config["webhook_security"]
+	webhook_secret = config["webhook_secret"]
 	settings = frappe.get_single("n8n Settings")
-	if not webhook_security:
-		webhook_security = frappe.generate_hash(length=32)
-		settings.db_set("webhook_security", webhook_security)
-		settings.webhook_security = webhook_security
+	if not webhook_secret:
+		webhook_secret = frappe.generate_hash(length=32)
+		settings.db_set("webhook_secret", webhook_secret)
+		settings.webhook_secret = webhook_secret
 
 	credential_exists = False
 	if settings.webhook_credential_id:
 		try:
-			client.update_credential(settings.webhook_credential_id, webhook_security)
+			client.update_credential(settings.webhook_credential_id, webhook_secret)
 			credential_exists = True
 		except N8nNotFoundError:
 			settings.db_set("webhook_credential_id", None)
@@ -253,7 +253,7 @@ def update_credential():
 			for cred in credentials:
 				if cred.get("name") == "crm_n8n_api_key":
 					try:
-						client.update_credential(cred["id"], webhook_security)
+						client.update_credential(cred["id"], webhook_secret)
 						settings.db_set("webhook_credential_id", cred["id"])
 						settings.webhook_credential_id = cred["id"]
 						credential_exists = True
@@ -265,7 +265,7 @@ def update_credential():
 
 	if not credential_exists:
 		try:
-			new_id = client.create_credential("crm_n8n_api_key", webhook_security)
+			new_id = client.create_credential("crm_n8n_api_key", webhook_secret)
 			settings.db_set("webhook_credential_id", new_id)
 			settings.webhook_credential_id = new_id
 			settings.db_set("webhook_secret_updated", frappe.utils.now_datetime())
@@ -281,7 +281,7 @@ def update_credential():
 		except N8nNotFoundError:
 			settings.db_set("webhook_credential_id", None)
 			settings.webhook_credential_id = None
-			new_id = client.create_credential("crm_n8n_api_key", webhook_security)
+			new_id = client.create_credential("crm_n8n_api_key", webhook_secret)
 			settings.db_set("webhook_credential_id", new_id)
 			settings.webhook_credential_id = new_id
 			client.move_credential(new_id, destination_project_id)
@@ -295,10 +295,10 @@ def rotate_credentials():
 		return
 
 	settings = frappe.get_single("n8n Settings")
-	new_webhook_security = frappe.generate_hash(length=32)
+	new_webhook_secret = frappe.generate_hash(length=32)
 	if settings.webhook_credential_id:
 		try:
-			client.update_credential(settings.webhook_credential_id, new_webhook_security)
+			client.update_credential(settings.webhook_credential_id, new_webhook_secret)
 		except N8nNotFoundError:
 			update_credential()
 			return
@@ -306,7 +306,7 @@ def rotate_credentials():
 		update_credential()
 		return
 
-	settings.db_set("webhook_security", new_webhook_security)
+	settings.db_set("webhook_secret", new_webhook_secret)
 	settings.db_set("webhook_secret_updated", frappe.utils.now_datetime())
 	controller.emit_event(key="n8n_credential_ready", argument={"status": "success"})
 
@@ -532,7 +532,7 @@ def trigger_test_execution(playbook_name: str, payload: dict, execution_name: st
 			webhook_id=webhook_id,
 			payload=payload,
 			execution_name=execution_name,
-			webhook_security=config["webhook_security"],
+			webhook_secret=config["webhook_secret"],
 		)
 		if res.status_code >= 400:
 			return {
@@ -597,7 +597,7 @@ def trigger_execution(playbook_name: str, payload: dict, execution_name: str, we
 		webhook_id=webhook_id,
 		payload=payload,
 		execution_name=execution_name,
-		webhook_security=config["webhook_security"],
+		webhook_secret=config["webhook_secret"],
 	)
 
 
@@ -621,7 +621,7 @@ def resume_execution(url: str, payload: dict, execution_id: str | None = None) -
 	if not client:
 		return
 	try:
-		res = client.resume_execution(url, payload, webhook_security=config["webhook_security"])
+		res = client.resume_execution(url, payload, webhook_secret=config["webhook_secret"])
 		if res.status_code >= 400 and execution_id:
 			if frappe.db.exists("Playbook Execution", execution_id):
 				frappe.db.set_value("Playbook Execution", execution_id, "status", "error")

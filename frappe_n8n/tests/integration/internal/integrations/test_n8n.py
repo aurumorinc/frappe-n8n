@@ -68,7 +68,7 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 		settings.db_set("status", "Authorized")
 		settings.db_set("base_url", "https://n8n.example.com")
 		settings.db_set("api_key", "test_key")
-		settings.db_set("webhook_security", "token_123")
+		settings.db_set("webhook_secret", "token_123")
 		settings.db_set("webhook_credential_id", "cred_123")
 		settings.db_set("project_id", "proj_456")
 
@@ -106,11 +106,11 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 		settings.db_set("base_url", "https://n8n.example.com")
 		settings.db_set("api_key", "test_key")
 		settings.db_set("webhook_credential_id", "cred_123")
-		settings.db_set("webhook_security", "old_sec")
+		settings.db_set("webhook_secret", "old_sec")
 
 		rotate_credentials()
 		settings.reload()
-		self.assertNotEqual(settings.webhook_security, "old_sec")
+		self.assertNotEqual(settings.webhook_secret, "old_sec")
 		mock_update.assert_called_once()
 
 	@patch.object(N8nClient, "move_workflow")
@@ -242,7 +242,7 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 		settings.db_set("status", "Authorized")
 		settings.db_set("base_url", "https://n8n.example.com")
 		settings.db_set("api_key", "test_key")
-		settings.db_set("webhook_security", "sec_123")
+		settings.db_set("webhook_secret", "sec_123")
 
 		pb = frappe.get_doc({
 			"doctype": "Playbook",
@@ -260,7 +260,7 @@ class TestN8nInternalIntegration(IntegrationTestCase):
 			webhook_id="wh-sync-test",
 			payload={"key": "val"},
 			execution_name="test-exec-name",
-			webhook_security="sec_123"
+			webhook_secret="sec_123"
 		)
 		self.assertEqual(res["status"], "success")
 

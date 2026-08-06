@@ -23,7 +23,7 @@ If you want Frappe to trigger the workflow automatically on Frappe document even
 **HTTP Headers:**
 - `Content-Type`: `application/json`
 - `Frappe-Playbook-Execution-Name`: `<execution_name>` (Used for identity and idempotency)
-- `Authorization`: `Bearer <webhook_security>` *(If configured in n8n Settings)*
+- `Authorization`: `Bearer <webhook_secret>` *(If configured in n8n Settings)*
 
 **JSON Payload:**
 ```json
