@@ -8,6 +8,8 @@ on:
 jobs:
   release:
     if: "!startsWith(github.event.head_commit.message, 'chore: release')"
+    permissions:
+      contents: write
     uses: aurumorinc/.github/.github/workflows/release.yaml@main
     secrets:
       RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
